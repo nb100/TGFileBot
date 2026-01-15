@@ -16,6 +16,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	handleUrl "net/url"
 	"os"
 	"reflect"
 	"strconv"
@@ -745,11 +746,11 @@ func parseTelegramLink(text string) (channelID int64, messageID int, err error) 
 func parseUsernameLink(text string) (username string, messageID int, err error) {
 	var part string
 	if strings.Contains(text, "t.me/") {
-		parts := strings.Split(text, "t.me/")
-		if len(parts) < 2 {
-			return "", 0, errors.New("链接格式错误")
+		parsedURL, err := handleUrl.Parse(text)
+		if err != nil {
+			return "", 0, fmt.Errorf("解析 %s 错误无效的 URL %+v", text, err)
 		}
-		part = parts[1]
+		part = strings.Trim(parsedURL.Path, "/")
 	} else if strings.HasPrefix(text, "@") {
 		part = text[1:]
 	} else {
