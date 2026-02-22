@@ -8,8 +8,6 @@ ARG TARGETOS
 WORKDIR /tgfilebot
 COPY . .
 
-RUN go mod tidy
-
 RUN CGO_ENABLED=0 \
     GOOS=${TARGETOS} \
     GOARCH=${TARGETARCH} \

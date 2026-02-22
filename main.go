@@ -129,6 +129,47 @@ func InitCache() {
 	log.Println("缓存已初始化")
 }
 
+// ============================================================================
+// 通知去重
+// ============================================================================
+
+// notifyDedupEntry 记录一条已发送的通知文本及其发送时间
+type notifyDedupEntry struct {
+	sentAt time.Time
+}
+
+var (
+	notifyDedupMu  sync.Mutex
+	notifyDedupMap = make(map[string]notifyDedupEntry)
+)
+
+// isDuplicateNotify 检查 text 是否在 1 分钟内已经发送过。
+// 若未发送过（或已超时），则记录并返回 false；否则返回 true。
+func isDuplicateNotify(text string) bool {
+	// 用 MD5 作为 key 以节省内存
+	h := md5.Sum([]byte(text))
+	key := hex.EncodeToString(h[:])
+
+	notifyDedupMu.Lock()
+	defer notifyDedupMu.Unlock()
+
+	// 清理过期条目（简单遍历，条目数量通常很少）
+	now := time.Now()
+	for k, v := range notifyDedupMap {
+		if now.Sub(v.sentAt) >= 5*time.Minute {
+			delete(notifyDedupMap, k)
+		}
+	}
+
+	if entry, exists := notifyDedupMap[key]; exists {
+		if now.Sub(entry.sentAt) < time.Minute {
+			return true // 重复
+		}
+	}
+	notifyDedupMap[key] = notifyDedupEntry{sentAt: now}
+	return false
+}
+
 func (c *Cache) Get(key string, value *File) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -1425,9 +1466,13 @@ func handleTGLink(w http.ResponseWriter, r *http.Request) {
 	// 构造最终直链
 	finalLink := fmt.Sprintf("%s/stream/%s?hash=%s", config.Host, streamPath, streamHash)
 
-	// 异步通知机器人
+	// 异步通知机器人（1 分钟内相同内容只通知一次）
 	go func() {
 		notifyText := fmt.Sprintf("已处理来自 %s 的转发 %s 链接请求，直链: %s", clientIP, targetLink, finalLink)
+		if isDuplicateNotify(notifyText) {
+			log.Printf("跳过重复通知（1 分钟内已发送）: %s", notifyText)
+			return
+		}
 		notifyParams := map[string]any{
 			"chat_id": config.TeleID,
 			"text":    notifyText,
