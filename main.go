@@ -58,6 +58,7 @@ type Config struct {
 	AdminUsers   []int64
 	TeleID       int64  // 机器人用户ID
 	PhoneNumber  string // User Bot 手机号（可选）
+	Password     string
 }
 
 var config *Config
@@ -555,16 +556,6 @@ func handleStart(ctx *ext.Context, u *ext.Update) error {
 		return dispatcher.EndGroups
 	}
 
-	/*
-		if len(config.adminUsers) > 0 && !contains(config.adminUsers, chatId) {
-			_, err := ctx.Reply(u, ext.ReplyTextString("您没有权限使用此机器人。"), nil)
-			if err != nil {
-				log.Printf("发送未授权消息给用户 %d 失败: %v", chatId, err)
-			}
-			return dispatcher.EndGroups
-		}
-	*/
-
 	_, err := ctx.Reply(u, ext.ReplyTextString("您好，发送任意文件即可获取该文件的直链。"), nil)
 	if err != nil {
 		log.Printf("发送欢迎消息给用户 %d 失败: %v", chatId, err)
@@ -599,27 +590,22 @@ func handleMessage(ctx *ext.Context, u *ext.Update) error {
 		_, _ = ctx.Reply(u, ext.ReplyTextString("您已被禁用，无法使用该机器人。"), nil)
 		return dispatcher.EndGroups
 	}
-	/*
-		if len(config.adminUsers) > 0 && !contains(config.adminUsers, chatId) {
-			_, err := ctx.Reply(u, ext.ReplyTextString("您没有权限使用此机器人。"), nil)
-			if err != nil {
-				log.Printf("发送未授权消息给用户 %d 失败: %v", chatId, err)
-			}
-			return dispatcher.EndGroups
-		}
-	*/
 
 	// 检查是否是 Telegram 链接
 	messageText := u.EffectiveMessage.Text
 	if messageText != "" {
-		channelID, messageID, err := parseTelegramLink(messageText)
-		if err == nil {
-			// 处理 t.me/c/<id>/<msg>
-			return handleTelegramLink(ctx, u, channelID, messageID)
-		}
-		// 尝试解析 t.me/<username>/<msg>
-		if username, mid, err2 := parseUsernameLink(messageText); err2 == nil {
-			return handleTelegramUsernameLink(ctx, u, username, mid)
+		switch {
+		case strings.Contains(messageText, "t.me/c/"):
+			channelID, messageID, err := parseTelegramLink(messageText)
+			if err == nil {
+				// 处理 t.me/c/<id>/<msg>
+				return handleTelegramLink(ctx, u, channelID, messageID)
+			}
+		default:
+			// 尝试解析 t.me/<username>/<msg>
+			if username, mid, err := parseUsernameLink(messageText); err == nil {
+				return handleTelegramUsernameLink(ctx, u, username, mid)
+			}
 		}
 	}
 
@@ -1354,11 +1340,123 @@ func setupRouter() http.Handler {
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	})
+	// link 路由
+	mux.HandleFunc("/link", handleTGLink)
 
 	// stream 路由: 形如 /stream/{messageID 或 channelID_messageID}
 	mux.HandleFunc("/stream/", handleStream)
 
 	return mux
+}
+
+func handleTGLink(w http.ResponseWriter, r *http.Request) {
+	params := r.URL.Query()
+	password := params.Get("key")
+	if password != config.Password {
+		http.Error(w, "无效的密码", http.StatusUnauthorized)
+		return
+	}
+
+	// 获取访问者 IP
+	clientIP := r.Header.Get("X-Forwarded-For")
+	if clientIP == "" {
+		clientIP = r.RemoteAddr
+	}
+	// 只取第一个 IP（可能有多个逗号分隔）
+	if idx := strings.Index(clientIP, ","); idx != -1 {
+		clientIP = strings.TrimSpace(clientIP[:idx])
+	}
+
+	targetLink := params.Get("link")
+
+	var streamPath string // 形如 channelID_messageID 或 messageID
+	var streamHash string
+
+	switch {
+	case strings.Contains(targetLink, "/c/"):
+		channelID, messageID, err := parseTelegramLink(targetLink)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("解析链接失败: %v", err), http.StatusBadRequest)
+			return
+		}
+		message, err := getTGMessageFromChannel(r.Context(), Bot, channelID, messageID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("获取消息失败: %v", err), http.StatusBadRequest)
+			return
+		}
+		if message.Media == nil {
+			http.Error(w, "该消息不包含文件", http.StatusBadRequest)
+			return
+		}
+		file, err := fileFromMedia(message.Media)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("提取文件失败: %v", err), http.StatusBadRequest)
+			return
+		}
+		fullHash := packFile(file.FileName, file.FileSize, file.MimeType, file.ID)
+		streamHash = getShortHash(fullHash)
+		streamPath = fmt.Sprintf("%d_%d", channelID, messageID)
+
+	default:
+		username, mid, err := parseUsernameLink(targetLink)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("解析链接失败: %v", err), http.StatusBadRequest)
+			return
+		}
+		message, internalID, err := getTGMessageFromUsername(r.Context(), Bot, username, mid)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("获取消息失败: %v", err), http.StatusBadRequest)
+			return
+		}
+		if message.Media == nil {
+			http.Error(w, "该消息不包含文件", http.StatusBadRequest)
+			return
+		}
+		file, err := fileFromMedia(message.Media)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("提取文件失败: %v", err), http.StatusBadRequest)
+			return
+		}
+		fullHash := packFile(file.FileName, file.FileSize, file.MimeType, file.ID)
+		streamHash = getShortHash(fullHash)
+		streamPath = fmt.Sprintf("%d_%d", internalID, mid)
+	}
+
+	// 构造最终直链
+	finalLink := fmt.Sprintf("%s/stream/%s?hash=%s", config.Host, streamPath, streamHash)
+
+	// 异步通知机器人
+	go func() {
+		notifyText := fmt.Sprintf("已处理来自 %s 的转发 %s 链接请求，直链: %s", clientIP, targetLink, finalLink)
+		notifyParams := map[string]any{
+			"chat_id": config.TeleID,
+			"text":    notifyText,
+		}
+		body, err := json.Marshal(notifyParams)
+		if err != nil {
+			log.Printf("序列化通知消息失败: %v", err)
+			return
+		}
+		url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", config.BotToken)
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+		if err != nil {
+			log.Printf("创建通知请求失败: %v", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("发送转发链接通知失败: %v", err)
+			return
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+	}()
+
+	// 302 跳转到直链
+	http.Redirect(w, r, finalLink, http.StatusFound)
 }
 
 func handleStream(w http.ResponseWriter, r *http.Request) {
@@ -1700,7 +1798,7 @@ func loadConfig() error {
 			log.Printf("  ApiHash: %s", maskSecret(config.ApiHash))
 			log.Printf("  BotToken: %s", maskSecret(config.BotToken))
 			log.Printf("  LogChannelID: %d", config.LogChannelID)
-			log.Printf("  TELE_ID: %d", config.TeleID)
+			log.Printf("  TeleID: %d", config.TeleID)
 			log.Printf("  HashLength: %d", config.HashLength)
 			if len(config.AdminUsers) > 0 {
 				log.Printf("  AdminUsers: %v", config.AdminUsers)
@@ -1801,6 +1899,11 @@ func loadConfig() error {
 				config.AdminUsers = append(config.AdminUsers, userID)
 			}
 		}
+	}
+
+	// Password (可选)
+	if password := os.Getenv("PASSWORD"); password != "" {
+		config.Password = password
 	}
 
 	success = true
