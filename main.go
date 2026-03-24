@@ -480,6 +480,8 @@ func handleMess(m *telegram.NewMessage) error {
 				commentMs, err := infos.UserClient.GetMessages(discussionID, &telegram.SearchOption{IDs: []int32{int32(commentID)}})
 				if err == nil && len(commentMs) > 0 {
 					src = commentMs[0] // 将目标消息切换为评论消息
+					src.ID = int32(commentID)
+					src.Chat.ID = discussionID
 				}
 			}
 		}
@@ -493,7 +495,7 @@ func handleMess(m *telegram.NewMessage) error {
 		}
 
 		// 为媒体文件构造下载直链
-		link := fmt.Sprintf("%s/stream?cid=%d&mid=%d&cate=user", strings.TrimSuffix(infos.Conf.Site, "/"), src.ChatID(), src.ID)
+		link := fmt.Sprintf("%s/stream?cid=%v&mid=%d&cate=user", strings.TrimSuffix(infos.Conf.Site, "/"), src.ChatID(), src.ID)
 		err = sendLink(m, link)
 		if err != nil {
 			log.Printf("推送直链失败: %+v", err)
@@ -664,7 +666,7 @@ func handleLink(w http.ResponseWriter, r *http.Request) {
 	}
 	// 编译正则表达式匹配 Telegram 链接格式
 	// 匹配格式如：t.me/c/12345/678 或 t.me/username/678
-	re := regexp.MustCompile(`t\.me\/(c\/(\d+)|([a-zA-Z0-9_]+))\/(\d+)`)
+	re := regexp.MustCompile(`t\.me\/(c\/(\d+)|([a-zA-Z0-9_]+))\/(\d+)(?:\?.*comment=(\d+))?`)
 	matches := re.FindAllStringSubmatch(link, -1)
 
 	// 遍历所有匹配到的链接
@@ -702,6 +704,26 @@ func handleLink(w http.ResponseWriter, r *http.Request) {
 		}
 
 		src := ms[0] // 获取第一条目标消息
+		if match[5] != "" {
+			commentID, err := strconv.ParseInt(match[5], 10, 32)
+			if err != nil {
+				continue
+			}
+
+			// a. 检查该消息是否有讨论功能并获取讨论组 ID
+			// gogram 的 NewMessage 对象通过 .Message.Replies 获取元数据
+			if src.Message.Replies != nil && src.Message.Replies.ChannelID != 0 {
+				discussionID := src.Message.Replies.ChannelID // 讨论组的 ID
+
+				// b. 从讨论组中获取真正的评论消息
+				commentMs, err := infos.UserClient.GetMessages(discussionID, &telegram.SearchOption{IDs: []int32{int32(commentID)}})
+				if err == nil && len(commentMs) > 0 {
+					src = commentMs[0] // 将目标消息切换为评论消息
+					src.ID = int32(commentID)
+					src.Chat.ID = discussionID
+				}
+			}
+		}
 		// 判断该消息是否包含可下载的媒体内容
 		if !src.IsMedia() || (src.Photo() == nil && src.Document() == nil && src.Video() == nil) {
 			log.Printf("消息不包含媒体: cid=%d, mid=%d", cid, mid)
@@ -710,13 +732,13 @@ func handleLink(w http.ResponseWriter, r *http.Request) {
 
 		// 为媒体文件构造下载直链
 		if infos.Conf.Password != "" {
-			link = fmt.Sprintf("%s/stream?cid=%d&mid=%d&key=%s&cate=user", strings.TrimSuffix(infos.Conf.Site, "/"), src.ChatID(), src.ID, infos.Conf.Password)
+			link = fmt.Sprintf("%s/stream?cid=%v&mid=%d&key=%s&cate=user", strings.TrimSuffix(infos.Conf.Site, "/"), src.ChatID(), src.ID, infos.Conf.Password)
 		} else {
-			link = fmt.Sprintf("%s/stream?cid=%d&mid=%d&cate=user", strings.TrimSuffix(infos.Conf.Site, "/"), src.ChatID(), src.ID)
+			link = fmt.Sprintf("%s/stream?cid=%v&mid=%d&cate=user", strings.TrimSuffix(infos.Conf.Site, "/"), src.ChatID(), src.ID)
 		}
 		http.Redirect(w, r, link, http.StatusFound)
+		return
 	}
-
 }
 
 func handleTime(seconds uint64) string {
