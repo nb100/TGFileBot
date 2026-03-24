@@ -102,11 +102,12 @@ func main() {
 
 	// 如果配置文件中包含 BotToken，优先让 Bot 上线用来交互与监听管理指令
 	botConf := telegram.ClientConfig{
-		AppID:    infos.Conf.AppID,
-		AppHash:  infos.Conf.AppHash,
-		LogLevel: telegram.LogError,
-		Session:  filepath.Join(infos.FilesPath, "bot.session"),
-		Cache:    telegram.NewCache(filepath.Join(infos.FilesPath, "bot.cache")),
+		AppID:        infos.Conf.AppID,
+		AppHash:      infos.Conf.AppHash,
+		LogLevel:     telegram.LogError,
+		Session:      filepath.Join(infos.FilesPath, "bot.session"),
+		Cache:        telegram.NewCache(filepath.Join(infos.FilesPath, "bot.cache")),
+		CacheSenders: true,
 	}
 
 	client, err := telegram.NewClient(botConf)
@@ -209,11 +210,12 @@ func startUserBot() error {
 	}
 
 	userConf := telegram.ClientConfig{
-		AppID:    infos.Conf.AppID,
-		AppHash:  infos.Conf.AppHash,
-		LogLevel: telegram.LogError,
-		Session:  filepath.Join(infos.FilesPath, "user.session"),
-		Cache:    telegram.NewCache(filepath.Join(infos.FilesPath, "user.cache")),
+		AppID:        infos.Conf.AppID,
+		AppHash:      infos.Conf.AppHash,
+		LogLevel:     telegram.LogError,
+		Session:      filepath.Join(infos.FilesPath, "user.session"),
+		Cache:        telegram.NewCache(filepath.Join(infos.FilesPath, "user.cache")),
+		CacheSenders: true,
 	}
 
 	client, err := telegram.NewClient(userConf)
@@ -405,15 +407,6 @@ func handleBotCommand(m *telegram.NewMessage) error {
 
 // handleM 处理接收到的新消息，解析其中的媒体文件或 tg 链接
 func handleMess(m *telegram.NewMessage) error {
-	/*
-		if !isAdmin(m.SenderID()) {
-			log.Printf("收到非管理员消息: %d", m.SenderID())
-			if _, err := infos.BotClient.SendMessage(infos.Conf.UserID, "你没有使用此机器人的权限"); err != nil {
-				log.Printf("发送消息失败: %+v", err)
-			}
-			return nil
-		}
-	*/
 	// 如果是用户发送或转发来的、带有图片/文档/视频的消息，直接生成直链
 	if m.IsMedia() && (m.Photo() != nil || m.Document() != nil || m.Video() != nil) {
 		link := fmt.Sprintf("%s/stream?cid=%d&mid=%d&cate=bot", strings.TrimSuffix(infos.Conf.Site, "/"), m.ChatID(), m.ID)
@@ -428,7 +421,7 @@ func handleMess(m *telegram.NewMessage) error {
 
 	// 编译正则表达式匹配 Telegram 链接格式
 	// 匹配格式如：t.me/c/12345/678 或 t.me/username/678
-	re := regexp.MustCompile(`t\.me\/(c\/(\d+)|([a-zA-Z0-9_]+))\/(\d+)`)
+	re := regexp.MustCompile(`t\.me\/(c\/(\d+)|([a-zA-Z0-9_]+))\/(\d+)(?:\?.*comment=(\d+))?`)
 	matches := re.FindAllStringSubmatch(text, -1)
 
 	// 遍历所有匹配到的链接
@@ -472,6 +465,25 @@ func handleMess(m *telegram.NewMessage) error {
 		}
 
 		src := ms[0] // 获取第一条目标消息
+		if match[5] != "" {
+			commentID, err := strconv.ParseInt(match[5], 10, 32)
+			if err != nil {
+				continue
+			}
+
+			// a. 检查该消息是否有讨论功能并获取讨论组 ID
+			// gogram 的 NewMessage 对象通过 .Message.Replies 获取元数据
+			if src.Message.Replies != nil && src.Message.Replies.ChannelID != 0 {
+				discussionID := src.Message.Replies.ChannelID // 讨论组的 ID
+
+				// b. 从讨论组中获取真正的评论消息
+				commentMs, err := infos.UserClient.GetMessages(discussionID, &telegram.SearchOption{IDs: []int32{int32(commentID)}})
+				if err == nil && len(commentMs) > 0 {
+					src = commentMs[0] // 将目标消息切换为评论消息
+				}
+			}
+		}
+
 		// 判断该消息是否包含可下载的媒体内容
 		if !src.IsMedia() || (src.Photo() == nil && src.Document() == nil && src.Video() == nil) {
 			if _, err := m.Reply("链接对应的消息不包含媒体文件"); err != nil {

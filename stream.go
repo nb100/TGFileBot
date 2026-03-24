@@ -7,6 +7,7 @@ import (
 	"log"
 	"sync"
 
+	mtproto "github.com/amarnathcjd/gogram"
 	"github.com/amarnathcjd/gogram/telegram"
 )
 
@@ -189,9 +190,42 @@ func (reader *Reader) fetchChunk(offset int64) ([]byte, error) {
 		Limit:    int32(reader.ChunkSize),
 	}
 
-	res, err := reader.Client.UploadGetFile(params)
+	var res any
+	var err error
+
+	// 获取并使用正确 DC 的 Sender
+	targetDC := int(reader.DC)
+
+	if targetDC != 0 {
+		infos.Mutex.Lock()
+		if infos.Senders == nil {
+			infos.Senders = make(map[int]*mtproto.MTProto)
+		}
+		s, ok := infos.Senders[targetDC]
+		infos.Mutex.Unlock()
+
+		if ok {
+			res, err = s.MakeRequest(params)
+		} else {
+			// 尝试创建一个导出授权的 Sender
+			newSender, serr := reader.Client.CreateExportedSender(targetDC, false)
+			if serr == nil {
+				infos.Mutex.Lock()
+				infos.Senders[targetDC] = newSender
+				infos.Mutex.Unlock()
+				log.Printf("成功创建 DC %d 的导出 Sender", targetDC)
+				res, err = newSender.MakeRequest(params)
+			} else {
+				log.Printf("创建 DC %d 的导出 Sender 失败: %v, 将回退到主客户端", targetDC, serr)
+				res, err = reader.Client.UploadGetFile(params)
+			}
+		}
+	} else {
+		res, err = reader.Client.UploadGetFile(params)
+	}
+
 	if err != nil {
-		// Attempt refreshcate
+		// Attempt refresh
 		if reader.ChannelID != 0 && reader.MessageID != 0 && reader.Cate != "bot" {
 			log.Printf("Chunk fetch failed, attempting refresh: %v", err)
 			ms, refreshErr := reader.Client.GetMessages(reader.ChannelID, &telegram.SearchOption{IDs: []int32{reader.MessageID}})
@@ -202,7 +236,8 @@ func (reader *Reader) fetchChunk(offset int64) ([]byte, error) {
 						reader.Location = loc
 						reader.DC = dc
 						params.Location = loc
-						res, err = reader.Client.UploadGetFile(params)
+						// 递归重试一次，或者至少在这里尝试重新调用 (简单起见这里直接报错，下个 chunk 会用新 DC)
+						return reader.fetchChunk(offset)
 					}
 				}
 			}
