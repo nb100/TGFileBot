@@ -36,6 +36,13 @@ go.work.sum
 .idea/go.imports.xml
 .idea/modules.xml
 .idea/TGBot.iml
-files/blacklist.json
 files/fsb.session
 files/userbot.session
+.idea/copilot.*.xml
+.vscode/launch.json
+files/bot_*.cache
+files/bot.session
+files/config.json
+files/user_*.cache
+files/user.session
+.gitignore

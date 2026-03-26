@@ -71,8 +71,10 @@ func isWhiteList(id int64) bool {
 
 func main() {
 	defer func() {
-		if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-			log.Printf("保存配置文件失败: %+v", err)
+		if infos.HasNew {
+			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+				log.Printf("保存配置文件失败: %+v", err)
+			}
 		}
 	}()
 
@@ -515,9 +517,6 @@ func handleMess(m *telegram.NewMessage) error {
 
 	if len(matches) == 0 {
 		log.Printf("收到非链接消息: %s", src)
-		if _, err := m.Reply("收到非链接消息"); err != nil {
-			log.Printf("发送消息失败: %+v", err)
-		}
 		return nil
 	}
 
