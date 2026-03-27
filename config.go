@@ -10,9 +10,9 @@ import (
 
 // Config 结构体定义了程序所需的配置项
 type Conf struct {
-	AppHash   string  `json:"hash"`               // Telegram API Hash
 	Site      string  `json:"site"`               // 反代域名
 	Phone     string  `json:"phone"`              // User Bot 身份对应的手机号
+	AppHash   string  `json:"hash"`               // Telegram API Hash
 	BotToken  string  `json:"botToken"`           // 接收/phone等命令的Bot Token
 	Password  string  `json:"password,omitempty"` // 访问/link的密码
 	Port      int     `json:"port"`               // 程序运行的 HTTP 端口

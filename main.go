@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"         // 用于读取文件流
 	"context"       // 用于上下文和超时控制
 	"encoding/json" // 用于处理 JSON 数据
 	"errors"        // 用于处理错误
@@ -40,6 +41,7 @@ type Infos struct {
 	Conf       *Conf                    // 全局配置指针
 	HasNew     bool                     // 是否有新配置
 	FilesPath  string                   // 配置目录路径
+	LogPath    string                   // 日志文件路径
 	UserHash   string                   // 验证码所需的登录Hash
 	BotID      int64                    // Bot 的 ID
 	Senders    map[int]*mtproto.MTProto // 独立的 Bot 客户端
@@ -74,7 +76,24 @@ func main() {
 	startTime = time.Now()
 	// 加载配置文件
 	files := flag.String("files", "files", "文件路径和名称")
+	file := flag.String("log", "files/log.log", "日志文件路径")
 	flag.Parse()
+
+	infos.LogPath = *file
+
+	logFile, err := os.OpenFile(*file, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Printf("无法打开日志文件: %v", err)
+	}
+
+	defer func() {
+		if err := logFile.Close(); err != nil {
+			log.Printf("关闭日志文件错误: %v", err)
+		}
+	}()
+
+	multiWriter := io.MultiWriter(os.Stdout, logFile)
+	log.SetOutput(multiWriter)
 
 	value, err := loadConf(*files)
 	if err != nil {
@@ -307,6 +326,48 @@ func handleMain(w http.ResponseWriter, r *http.Request) {
 			log.Printf("发送网页失败: %+v", err)
 		}
 		return
+	case path == "/log":
+		// 1. 设置响应头
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Connection", "keep-alive")
+		// 禁用 Nginx 等代理的缓冲 (可选，但对流式传输很重要)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+
+		// 获取 Flusher 接口
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "浏览器不支持流式传输", http.StatusInternalServerError)
+			return
+		}
+
+		// 2. 打开日志文件
+		file, err := os.Open(infos.LogPath)
+		if err != nil {
+			fmt.Fprintf(w, "无法打开日志文件: %v\n", err)
+			return
+		}
+		defer func() {
+			err := file.Close()
+			if err != nil {
+				log.Printf("关闭日志文件错误: %v", err)
+			}
+		}()
+
+		ctx := r.Context()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				fmt.Fprintf(w, "%s\n", scanner.Text())
+				flusher.Flush()
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			log.Printf("读取文件时发生错误: %v", err)
+			fmt.Fprintf(w, "\n[服务器端读取错误: %v]\n", err)
+		}
 	case strings.HasPrefix(path, "/link"):
 		handleLink(w, r)
 		return
@@ -327,6 +388,10 @@ func handlePhone() error {
 			if strings.Contains(err.Error(), "DC_MIGRATE") || strings.Contains(err.Error(), "PHONE_MIGRATE") {
 				log.Printf("AuthSendCode 触发 DC/PHONE_MIGRATE, 清除 session 后重建 UserClient 重试 (%d/3): %v", count+1, err)
 				newDC := extractDC(err)
+				if newDC == 0 {
+					log.Printf("无法提取新的 DC, 跳过重试")
+					continue
+				}
 				if err := infos.UserClient.SwitchDc(newDC); err != nil {
 					log.Printf("切换 DC 失败: %v", err)
 				}
