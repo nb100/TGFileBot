@@ -10,19 +10,19 @@ import (
 
 // Config 结构体定义了程序所需的配置项
 type Conf struct {
-	Site      string  `json:"site"`               // 反代域名
-	Phone     string  `json:"phone"`              // User Bot 身份对应的手机号
-	AppHash   string  `json:"hash"`               // Telegram API Hash
-	BotToken  string  `json:"botToken"`           // 接收/phone等命令的Bot Token
-	Password  string  `json:"password,omitempty"` // 访问/link的密码
-	DC        int     `json:"dc"`                 // User Bot 身份对应的DC
-	Port      int     `json:"port"`               // 程序运行的 HTTP 端口
-	Workers   int     `json:"workers"`            // 并发数
-	AppID     int32   `json:"id"`                 // Telegram API ID
-	UserID    int64   `json:"userID"`             // User Bot 身份对应的账号ID
-	ChannelID int64   `json:"channelID"`          // 频道ID
-	AdminIDs  []int64 `json:"adminIDs,omitempty"` // 支持多管理员的ID列表
-	WhiteIDs  []int64 `json:"whiteIDs,omitempty"` // 支持多白名单的ID列表
+	Site      string  `json:"site"`                // 反代域名
+	Phone     string  `json:"phone"`               // User Bot 身份对应的手机号
+	AppHash   string  `json:"hash"`                // Telegram API Hash
+	BotToken  string  `json:"botToken"`            // 接收/phone等命令的Bot Token
+	Password  string  `json:"password,omitempty"`  // 访问/link的密码
+	DC        int     `json:"dc,omitempty"`        // User Bot 身份对应的DC
+	Port      int     `json:"port"`                // 程序运行的 HTTP 端口
+	Workers   int     `json:"workers,omitempty"`   // 并发数
+	AppID     int32   `json:"id"`                  // Telegram API ID
+	UserID    int64   `json:"userID"`              // User Bot 身份对应的账号ID
+	ChannelID int64   `json:"channelID,omitempty"` // 频道ID
+	AdminIDs  []int64 `json:"adminIDs,omitempty"`  // 支持多管理员的ID列表
+	WhiteIDs  []int64 `json:"whiteIDs,omitempty"`  // 支持多白名单的ID列表
 }
 
 // loadConf 用于从命令行参数指定的目录中加载 config.json

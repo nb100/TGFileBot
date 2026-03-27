@@ -619,9 +619,11 @@ func handleBotCommand(m *telegram.NewMessage) error {
 	default:
 		if !isWhiteList(m.SenderID()) && m.SenderID() != 0 {
 			log.Printf("收到非白名单消息: %d", m.SenderID())
-			if _, err := m.Reply("你没有使用此机器人的权限"); err != nil {
-				log.Printf("发送消息失败: %+v", err)
-			}
+			/*
+				if _, err := m.Reply("你没有使用此机器人的权限"); err != nil {
+					log.Printf("发送消息失败: %+v", err)
+				}
+			*/
 			return nil
 		}
 		return handleMess(m)
