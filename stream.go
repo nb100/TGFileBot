@@ -98,7 +98,6 @@ func (stream *Stream) start(contentStart, contentEnd int64) {
 
 func (stream *Stream) download(contentStart, contentEnd int64) {
 	for {
-		start := time.Now()
 		stream.Mutex.Lock()
 		task := newTask()
 		if *stream.TaskStart == 0 {
@@ -138,6 +137,7 @@ func (stream *Stream) download(contentStart, contentEnd int64) {
 		stream.Mutex.Unlock()
 
 		for num := 1; num <= 3; num++ {
+			start := time.Now()
 			version := stream.Version.Load()
 			content, fileName, err := stream.Client.DownloadChunk(*stream.Src, int(task.ContentStart), int(task.ContentEnd), int(stream.ChunkSize), stream.Ctx)
 			if err != nil {
@@ -156,7 +156,7 @@ func (stream *Stream) download(contentStart, contentEnd int64) {
 				return
 			} else {
 				duration := time.Since(start)
-				log.Printf("切片下载完成: cid=%d, mid=%d, start=%d, end=%d, content=%d, fileName=%s, duration=%.2fs", stream.CID, stream.MID, task.ContentStart, task.ContentEnd, len(content), fileName, duration.Seconds())
+				log.Printf("切片下载完成: cid=%d, mid=%d, start=%d, end=%d, content=%d, fileName=%s, num=%d, duration=%.2fs", stream.CID, stream.MID, task.ContentStart, task.ContentEnd, len(content), fileName, num, duration.Seconds())
 				task.Cond.L.Lock()
 				content = content[task.Offset:]
 				if task.Content == nil {

@@ -947,7 +947,7 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 
 	size := src.File.Size
 	fileName := src.File.Name
-	stream := newStream(r.Context(), infos.Client, src.Media(), infos.Conf.Workers, mid, cid, fileName)
+	stream := newStream(r.Context(), infos.UserClient, src.Media(), infos.Conf.Workers, mid, cid, fileName)
 
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Content-Type", handleMediaCate(fileName))
