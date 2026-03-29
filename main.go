@@ -26,6 +26,14 @@ import (
 	"github.com/amarnathcjd/gogram/telegram" // 导入 gogram 客户端核心库
 )
 
+type HackLink struct {
+	M       *telegram.NewMessage
+	UID     int64
+	Pass    string
+	Hash    string
+	Matches [][]string
+}
+
 type CleanRealm struct {
 	Filter bool   // 是否过滤
 	ID     string // 过滤ID
@@ -53,7 +61,7 @@ type Infos struct {
 
 var infos *Infos
 var startTime time.Time
-var version = "v1.0.2"
+var version = "v1.0.3"
 
 func newInfos(filePath, filesPath string) (*Infos, error) {
 	// 创建日志文件
@@ -999,8 +1007,11 @@ func handleMess(m *telegram.NewMessage) error {
 		// log.Printf("收到非链接消息: %s", src)
 		return nil
 	}
-
-	for _, link := range hackLink(matches, m) {
+	res := HackLink{
+		M:       m,
+		Matches: matches,
+	}
+	for _, link := range hackLink(res) {
 		if err := sendLink(m, link); err != nil {
 			log.Printf("发送消息失败: %+v", err)
 		}
@@ -1222,12 +1233,16 @@ func handleLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "无效的密码", http.StatusUnauthorized)
 		return
 	}
-
+	res := HackLink{
+		Pass: password,
+	}
 	hash := params.Get("hash")
 	if hash != "" {
+		res.Hash = hash
 		value := params.Get("uid")
 		uid, err := strconv.ParseInt(value, 10, 64)
 		if err == nil && uid != 0 {
+			res.UID = uid
 			if hash != infos.calculateHash(uid) {
 				http.Error(w, "无效的密码", http.StatusUnauthorized)
 				return
@@ -1249,8 +1264,9 @@ func handleLink(w http.ResponseWriter, r *http.Request) {
 	// 匹配格式如：t.me/c/12345/678 或 t.me/username/678
 	re := regexp.MustCompile(`t\.me\/(c\/(\d+)|([a-zA-Z0-9_]+))\/(\d+)(?:\?.*comment=(\d+))?`)
 	matches := re.FindAllStringSubmatch(src, -1)
+	res.Matches = matches
 
-	for _, link := range hackLink(matches, nil) {
+	for _, link := range hackLink(res) {
 		http.Redirect(w, r, link, http.StatusFound)
 		return
 	}
@@ -1293,9 +1309,9 @@ func readLastLines(filePath string, count int) (lines []string, err error) {
 	return lines, nil
 }
 
-func hackLink(matches [][]string, m *telegram.NewMessage) (links []string) {
+func hackLink(res HackLink) (links []string) {
 	// 遍历所有匹配到的链接
-	for _, match := range matches {
+	for _, match := range res.Matches {
 		var cid any   // 用于 ResolvePeer 的标识项（可以是用户名或 chatID）
 		var mid int32 // 消息 ID
 
@@ -1305,8 +1321,8 @@ func hackLink(matches [][]string, m *telegram.NewMessage) (links []string) {
 			value, err := strconv.ParseInt("-100"+match[2], 10, 64)
 			if err != nil {
 				log.Printf("解析频道ID失败: %+v", err)
-				if m != nil {
-					if _, err := m.Reply("解析频道ID失败"); err != nil {
+				if res.M != nil {
+					if _, err := res.M.Reply("解析频道ID失败"); err != nil {
 						log.Printf("发送消息失败: %+v", err)
 					}
 				}
@@ -1322,8 +1338,8 @@ func hackLink(matches [][]string, m *telegram.NewMessage) (links []string) {
 		value, err := strconv.ParseInt(match[4], 10, 32)
 		if err != nil {
 			log.Printf("解析消息ID失败: %+v", err)
-			if m != nil {
-				if _, err := m.Reply("解析消息ID失败"); err != nil {
+			if res.M != nil {
+				if _, err := res.M.Reply("解析消息ID失败"); err != nil {
 					log.Printf("发送消息失败: %+v", err)
 				}
 			}
@@ -1335,8 +1351,8 @@ func hackLink(matches [][]string, m *telegram.NewMessage) (links []string) {
 		ms, err := infos.UserClient.GetMessages(cid, &telegram.SearchOption{IDs: []int32{mid}})
 		if err != nil || len(ms) == 0 {
 			log.Printf("获取消息失败: cid=%d, mid=%d, err=%v, count=%d", cid, mid, err, len(ms))
-			if m != nil {
-				if _, err := m.Reply("获取消息失败"); err != nil {
+			if res.M != nil {
+				if _, err := res.M.Reply("获取消息失败"); err != nil {
 					log.Printf("发送消息失败: %+v", err)
 				}
 			}
@@ -1367,8 +1383,8 @@ func hackLink(matches [][]string, m *telegram.NewMessage) (links []string) {
 		// 判断该消息是否包含可下载的媒体内容
 		if !src.IsMedia() || (src.Photo() == nil && src.Document() == nil && src.Video() == nil) {
 			log.Printf("消息不包含媒体: cid=%d, mid=%d", cid, mid)
-			if m != nil {
-				if _, err := m.Reply("消息不包含媒体"); err != nil {
+			if res.M != nil {
+				if _, err := res.M.Reply("消息不包含媒体"); err != nil {
 					log.Printf("发送消息失败: %+v", err)
 				}
 			}
@@ -1378,7 +1394,18 @@ func hackLink(matches [][]string, m *telegram.NewMessage) (links []string) {
 		// 为媒体文件构造下载直链
 		link := fmt.Sprintf("%s/stream?cid=%v&mid=%d&cate=user", strings.TrimSuffix(infos.Conf.Site, "/"), src.ChatID(), src.ID)
 		if infos.Conf.Password != "" {
-			link += fmt.Sprintf("&hash=%s&uid=%d", infos.calculateHash(m.SenderID()), m.SenderID())
+			if res.M != nil {
+				link += fmt.Sprintf("&hash=%s&uid=%d", infos.calculateHash(res.M.SenderID()), res.M.SenderID())
+			} else {
+				switch {
+				case res.Hash != "" && res.UID != 0:
+					link += fmt.Sprintf("&hash=%s&uid=%d", res.Hash, res.UID)
+				case res.Pass != "":
+					link += fmt.Sprintf("&key=%s", res.Pass)
+				default:
+					log.Printf("未提供密码或哈希")
+				}
+			}
 		}
 		links = append(links, link)
 	}
