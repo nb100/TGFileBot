@@ -450,6 +450,7 @@ func (infos *Infos) startUserBotQR() (err error) {
 		}
 		return nil
 	default:
+		infos.Status = 1
 		infos.Mutex.Unlock()
 		if infos.UserClient == nil {
 			if err := infos.userBotClient(); err != nil {
@@ -575,6 +576,9 @@ func (infos *Infos) code() (code string, err error) {
 		infos.Mutex.Lock()
 		infos.Status = 1
 		infos.Mutex.Unlock()
+		if _, err := infos.BotClient.SendMessage(infos.Conf.UserID, "等待用户输入 /code 验证码..."); err != nil {
+			log.Printf("发送消息失败: %+v", err)
+		}
 		select {
 		case code := <-infos.Code:
 			log.Printf("收到验证码: %s", code)
@@ -605,10 +609,13 @@ func (infos *Infos) submitCode(code string) (err error) {
 
 func (infos *Infos) pass() (pass string, err error) {
 	if infos.Status == 1 {
-		log.Println("等待用户输入密码...")
+		log.Println("等待用户输入2FA密码...")
 		infos.Mutex.Lock()
 		infos.Status = 2
 		infos.Mutex.Unlock()
+		if _, err := infos.BotClient.SendMessage(infos.Conf.UserID, "等待用户输入 /pass 2FA密码..."); err != nil {
+			log.Printf("发送消息失败: %+v", err)
+		}
 		select {
 		case pass := <-infos.Pass:
 			log.Printf("收到密码: %s", pass)
