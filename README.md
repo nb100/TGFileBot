@@ -5,6 +5,7 @@ TGBot 是一个 Telegram Bot 和 UserBot 结合的项目，旨在提供文件直
 ## 暂存问题
 
 由于 MTProto 协议更新导致**部分**账号输入 /code 验证码后出现 [PHONE_CODE_EXPIRED] 错误。此时仅可使用 Bot，**通过 Telegram 链接获取直链**相关功能将无法使用。如有遇到此类问题建议更换账号登录或等待上游框架更新。
+或发送 `/qr` 扫描二维码登录
 
 ## 功能特性
 
@@ -100,6 +101,7 @@ docker run -d --name tgfilebot -p 8080:8080 -v $(pwd)/files:/root/files tgfilebo
 -   `/allow <用户ID>`: 将用户添加到白名单。
 -   `/disallow <用户ID>`: 从白名单中移除用户。
 -   `/check <哈希值>`: 查看哈希值对应的用户信息。
+-   `/qr`: 可使用二维码登录
 
 ### 获取直链
 

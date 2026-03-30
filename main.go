@@ -253,6 +253,11 @@ func (infos *Infos) startBot() (err error) {
 		Session:      filepath.Join(infos.FilesPath, "bot.session"),
 		Cache:        telegram.NewCache(filepath.Join(infos.FilesPath, "bot.cache")),
 		CacheSenders: true,
+		DeviceConfig: telegram.DeviceConfig{
+			DeviceModel:   "Android",
+			SystemVersion: "Android 14",
+			AppVersion:    "10.14.3",
+		},
 		FloodHandler: func(err error) bool {
 			wait := 3
 			matches := infos.Rex.FindStringSubmatch(strings.ToUpper(err.Error()))
@@ -319,6 +324,11 @@ func (infos *Infos) userBotClient() (err error) {
 		Session:      filepath.Join(infos.FilesPath, "user.session"),
 		Cache:        telegram.NewCache(filepath.Join(infos.FilesPath, "user.cache")),
 		CacheSenders: true,
+		DeviceConfig: telegram.DeviceConfig{
+			DeviceModel:   "Android",
+			SystemVersion: "Android 14",
+			AppVersion:    "10.14.3",
+		},
 		FloodHandler: func(err error) bool {
 			wait := 3
 			matches := infos.Rex.FindStringSubmatch(strings.ToUpper(err.Error()))
@@ -421,6 +431,93 @@ func (infos *Infos) startUserBot(phone string) (err error) {
 	return nil
 }
 
+func (infos *Infos) startUserBotQR() (err error) {
+	infos.Mutex.Lock()
+	switch infos.Status {
+	case 1, 2:
+		infos.Mutex.Unlock()
+		err = errors.New("已有登录流程正在进行")
+		log.Printf("UserBot 登录失败: %+v", err)
+		return err
+	case 3:
+		infos.Mutex.Unlock()
+		if infos.UserClient == nil {
+			if err := infos.userBotClient(); err != nil {
+				log.Printf("UserBot 登录失败: %+v", err)
+				infos.resetStatus()
+				return err
+			}
+		}
+		return nil
+	default:
+		infos.Mutex.Unlock()
+		if infos.UserClient == nil {
+			if err := infos.userBotClient(); err != nil {
+				log.Printf("UserBot 登录失败: %+v", err)
+				infos.resetStatus()
+				return err
+			}
+		}
+		if _, err := infos.BotClient.SendMessage(infos.Conf.UserID, "正在请求登录二维码..."); err != nil {
+			log.Printf("发送消息失败: %+v", err)
+		}
+		// 启动登录流程（会阻塞, 直到登录完成或失败）
+		go func() {
+			qr, err := infos.UserClient.QRLogin(telegram.QrOptions{
+				PasswordCallback: infos.pass,
+			})
+			if err != nil {
+				log.Printf("获取 QR 登录失败: %+v", err)
+				if _, err := infos.BotClient.SendMessage(infos.Conf.UserID, fmt.Sprintf("获取 QR 登录失败: %+v", err)); err != nil {
+					log.Printf("发送消息失败: %+v", err)
+				}
+				infos.resetStatus()
+				return
+			}
+
+			png, err := qr.ExportAsPng()
+			if err != nil {
+				log.Printf("导出 QR PNG 失败: %+v", err)
+				return
+			}
+
+			inputFile, err := infos.BotClient.UploadFile(png, &telegram.UploadOptions{
+				FileName: "qr.png",
+			})
+			if err != nil {
+				log.Printf("上传 QR 文件失败: %+v", err)
+				return
+			}
+
+			if _, err := infos.BotClient.SendMessage(infos.Conf.UserID, inputFile, &telegram.SendOptions{
+				Caption: "请使用手机 Telegram 扫描此二维码登录。二维码有效期 30 秒，如失效请重新发送 /qr",
+			}); err != nil {
+				log.Printf("发送 QR 图片失败: %+v", err)
+			} else {
+				log.Printf("二维码已发送给管理员")
+			}
+
+			err = qr.WaitLogin()
+			if err != nil {
+				log.Printf("QR 登录失败: %+v", err)
+				if _, err := infos.BotClient.SendMessage(infos.Conf.UserID, fmt.Sprintf("QR 登录失败: %+v", err)); err != nil && infos.Status != 0 {
+					log.Printf("发送消息失败: %+v", err)
+				}
+				infos.resetStatus()
+				return
+			}
+
+			if err := infos.checkStatus(); err != nil {
+				log.Printf("UserBot 登录失败: %+v", err)
+				infos.resetStatus()
+				return
+			}
+		}()
+	}
+
+	return nil
+}
+
 func (infos *Infos) checkStatus() (err error) {
 	// 登录成功
 	me, err := infos.UserClient.GetMe()
@@ -433,8 +530,12 @@ func (infos *Infos) checkStatus() (err error) {
 	}
 
 	if me.ID == infos.Conf.UserID {
-		log.Printf("登录成功! 用户: @%s", me.Username)
-		if _, err := infos.BotClient.SendMessage(infos.Conf.UserID, fmt.Sprintf("登录成功! 用户: @%s", me.Username)); err != nil && infos.Status != 0 {
+		name := me.FirstName + me.LastName
+		if me.Username != "" {
+			name = "@" + me.Username
+		}
+		log.Printf("登录成功! 用户: %s", name)
+		if _, err := infos.BotClient.SendMessage(infos.Conf.UserID, fmt.Sprintf("登录成功! 用户: %s", name)); err != nil && infos.Status != 0 {
 			log.Printf("发送消息失败: %+v", err)
 		}
 		infos.Mutex.Lock()
@@ -735,6 +836,22 @@ func handleBotCommand(m *telegram.NewMessage) error {
 
 		if err := infos.startUserBot(content); err != nil {
 			if _, err := m.Reply(fmt.Sprintf("启动 UserBot 失败: %+v", err)); err != nil {
+				log.Printf("发送消息失败: %+v", err)
+			}
+			return nil
+		}
+		return nil
+	case strings.HasPrefix(text, "/qr"):
+		if !infos.isAdmin(m.SenderID()) {
+			log.Printf("收到非管理员消息: %d", m.SenderID())
+			if _, err := m.Reply("你没有使用此机器人的权限"); err != nil {
+				log.Printf("发送消息失败: %+v", err)
+			}
+			return nil
+		}
+
+		if err := infos.startUserBotQR(); err != nil {
+			if _, err := m.Reply(fmt.Sprintf("启动 QR 登录失败: %+v", err)); err != nil {
 				log.Printf("发送消息失败: %+v", err)
 			}
 			return nil
