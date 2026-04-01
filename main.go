@@ -1137,7 +1137,7 @@ func handleBotCommand(m *telegram.NewMessage) error {
 		}
 		content := strings.TrimSpace(strings.TrimPrefix(text, "/list"))
 		if content == "" {
-			sendMS(m, "请提供要列出的类别: ", nil, 60)
+			sendMS(m, "请提供要列出的类别: <code>channels</code> | <code>ids</code>", nil, 60)
 			return nil
 		}
 		switch content {
