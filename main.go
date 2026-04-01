@@ -1337,6 +1337,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	err := checkPass(params)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
 	}
 
 	keywords := params.Get("keywords")
@@ -1418,6 +1419,7 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 	err := checkPass(params)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
 	}
 
 	// 2. 解析频道 ID 和 消息 ID
@@ -1600,6 +1602,7 @@ func handleLink(w http.ResponseWriter, r *http.Request) {
 	err := checkPass(params)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
 	}
 
 	// 2. 获取目标 Telegram 链接
