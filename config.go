@@ -20,6 +20,7 @@ type Conf struct {
 	Port      int     `json:"port"`                // 本地 HTTP 服务监听的端口
 	Workers   int     `json:"workers,omitempty"`   // 文件下载/串流时的并发协程数
 	AppID     int32   `json:"id"`                  // Telegram API ID，从 my.telegram.org 获取
+	MaxSize   int64   `json:"maxSize,omitempty"`   // 最大缓存
 	UserID    int64   `json:"userID"`              // 管理员的 Telegram 用户 ID
 	ChannelID int64   `json:"channelID,omitempty"` // 默认关联的频道 ID
 	AdminIDs  []int64 `json:"adminIDs,omitempty"`  // 管理员 ID 列表，拥有管理权限

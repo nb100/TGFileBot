@@ -111,6 +111,7 @@ docker run -d --name tgfilebot -p 8080:8080 -v $(pwd)/files:/root/files tgfilebo
 | `/channel <ID>`      | 动态设置绑定的默认频道 ID             | 管理员  |
 | `/workers <1-4>`     | 动态调整下载并发协程数                | 管理员  |
 | `/site <URL>`        | 动态更新生成链接所用的域名/反代地址         | 管理员  |
+| `/size <size>`       | 动态设置最大缓存大小                  | 管理员  |
 | `/info <筛选关键字> <行数>` | 查看系统运行日志（默认 10 行）          | 管理员  |
 | `/check <Hash>`      | 查看特定哈希值对应的用户信息             | 管理员  |
 | `/port <端口>`         | 动态设置 HTTP 服务端口             | 管理员  |

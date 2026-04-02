@@ -231,6 +231,9 @@ func newInfos(filePath, filesPath string) (*Infos, error) {
 	if conf.Workers == 0 {
 		conf.Workers = 1
 	}
+	if conf.MaxSize == 0 {
+		conf.MaxSize = 32 * 1024 * 1024
+	}
 	infos.Conf = conf
 	infos.IDs = make(map[int64]string, len(conf.AdminIDs)+len(conf.WhiteIDs)+1)
 
@@ -998,6 +1001,31 @@ func handleBotCommand(m *telegram.NewMessage) error {
 		infos.HasNew = true
 		infos.Mutex.Unlock()
 		sendMS(m, fmt.Sprintf("反代地址已设置为: %s", content), nil, 60)
+		return nil
+	case strings.HasPrefix(text, "/size"):
+		if !infos.isAdmin(m.SenderID()) {
+			sendMS(m, "你没有使用此命令的权限", nil, 60)
+			return nil
+		}
+		content := strings.TrimSpace(strings.TrimPrefix(text, "/size"))
+		if content == "" {
+			sendMS(m, fmt.Sprintf("当前最大缓存: %s", formatFileSize(infos.Conf.MaxSize)), nil, 60)
+			return nil
+		}
+		value := convertMaxSize(content)
+		if value == 0 {
+			sendMS(m, "最大缓存格式错误", nil, 60)
+			return nil
+		}
+		infos.Mutex.Lock()
+		infos.Conf.MaxSize = value
+		infos.HasNew = true
+		infos.Mutex.Unlock()
+		src := fmt.Sprintf("最大缓存已设置为: %s", formatFileSize(value))
+		if value > 128*1024*1024 {
+			src += ", 当前缓存较大, 容易引起OOM, 请谨慎设置"
+		}
+		sendMS(m, src, nil, 60)
 		return nil
 	case strings.HasPrefix(text, "/password"):
 		if !infos.isAdmin(m.SenderID()) {
@@ -1974,4 +2002,50 @@ func extractContent(src string) (string, *int) {
 
 	// 5. 最后一个空格后面不是数字，说明整个 body 都是 XXX（例如 "re hello world"）
 	return src, nil
+}
+
+func convertMaxSize(str string) int64 {
+	var unit int64 = 1
+	src := strings.ToUpper(str)
+	switch {
+	case strings.HasSuffix(src, "B"), regexp.MustCompile(`\d$`).MatchString(src):
+		src = strings.TrimSuffix(src, "B")
+		unit = 1
+	case strings.HasSuffix(src, "K"):
+		src = strings.TrimSuffix(src, "K")
+		unit = 1024
+	case strings.HasSuffix(src, "M"):
+		src = strings.TrimSuffix(src, "M")
+		unit = 1024 * 1024
+	default:
+		return int64(128 * 1024)
+	}
+
+	value, err := strconv.ParseInt(src, 10, 64)
+	if err != nil {
+		return int64(128 * 1024)
+	}
+	return value * unit
+}
+
+func formatFileSize(size int64) string {
+	const unit = 1024
+	if size < unit {
+		return fmt.Sprintf("%dB", size)
+	}
+	
+	units := []string{"B", "K", "M"}
+	var count int
+	var result = float64(size)
+	
+	for result >= unit && count < len(units)-1 {
+		result /= unit
+		count++
+	}
+	
+	// 如果是整数则不保留小数，有小数则保留两位
+	if result == float64(int64(result)) {
+		return fmt.Sprintf("%.0f%s", result, units[count])
+	}
+	return fmt.Sprintf("%.2f%s", result, units[count])
 }

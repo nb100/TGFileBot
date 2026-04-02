@@ -63,7 +63,10 @@ func newStream(ctx context.Context, client *telegram.Client, media telegram.Mess
 		chunkSize = 1024 * 1024
 	}
 	// 默认 32MB 缓存
-	maxCacheSize := int64(32 * 1024 * 1024)
+	maxCacheSize := infos.Conf.MaxSize
+	if maxCacheSize == 0 {
+		maxCacheSize = 32 * 1024 * 1024
+	}
 	// 计算任务管道的容量
 	maxChans := int(maxCacheSize / chunkSize)
 	if maxChans == 0 {
