@@ -185,6 +185,15 @@ func (stream *Stream) download(numTask int, contentStart, contentEnd int64) {
 				task.Cond.L.Lock()
 				// 根据初始偏移量截取内容
 				content = content[task.Offset:]
+				// 裁剪末尾：最后一个分片可能超出实际请求范围（contentEnd），
+				// 防止写入 HTTP 响应时超过声明的 Content-Length
+				if task.ContentEnd > contentEnd {
+					overshoot := task.ContentEnd - contentEnd
+					if int64(len(content)) > overshoot {
+						content = content[:int64(len(content))-overshoot]
+					}
+					task.ContentEnd = contentEnd
+				}
 				if task.Content == nil {
 					task.Content = &content
 				} else {
