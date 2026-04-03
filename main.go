@@ -1,8 +1,8 @@
 package main
 
 import (
-	"bufio" // 用于读取文件流
-	"context"
+	"bufio"             // 用于读取文件流
+	"context"           // 用于处理上下文
 	"crypto/md5"        // 用于计算哈希值
 	"encoding/hex"      // 用于进行十六进制编码
 	"encoding/json"     // 用于处理 JSON 数据
@@ -22,9 +22,10 @@ import (
 	"strconv"           // 用于字符串和数值的相互转换
 	"strings"           // 用于字符串处理
 	"sync"              // 用于并发锁
-	"sync/atomic"
-	"syscall" // 用于处理操作系统信号
-	"time"    // 用于处理时间相关逻辑
+	"sync/atomic"       // 用于原子操作
+	"syscall"           // 用于处理系统调用
+	"time"              // 用于处理时间相关逻辑
+	"unicode"           // 用于处理 Unicode 字符
 
 	"github.com/amarnathcjd/gogram/telegram" // 导入 gogram 客户端核心库
 )
@@ -361,7 +362,7 @@ func (infos *Infos) startBot() (err error) {
 		},
 		{
 			Command:     "code",
-			Description: "输入验证码登录",
+			Description: "输入验证码登录(需混入非数字字符)",
 		},
 		{
 			Command:     "pass",
@@ -677,7 +678,7 @@ func (infos *Infos) code() (code string, err error) {
 	}
 }
 
-func (infos *Infos) submitCode(code string) (err error) {
+func (infos *Infos) submitCode(str string) (err error) {
 	infos.Mutex.Lock()
 	defer infos.Mutex.Unlock()
 
@@ -686,6 +687,14 @@ func (infos *Infos) submitCode(code string) (err error) {
 		sendMS(nil, err.Error(), nil, 60)
 		return err
 	}
+	var sb strings.Builder
+	for _, r := range str {
+		if unicode.IsDigit(r) {
+			sb.WriteRune(r)
+		}
+	}
+
+	code := sb.String()
 	infos.Code <- code
 	return nil
 }

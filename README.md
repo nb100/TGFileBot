@@ -102,7 +102,7 @@ docker run -d --name tgfilebot -p 8080:8080 -v $(pwd)/files:/root/files tgfilebo
 | `/start`             | 查看 UserBot 当前状态            | 白名单  |
 | `/qr`                | **推荐方式：** 生成登录二维码，手机扫码即可登录 | 主管理员 |
 | `/phone <手机号>`       | 发起手机号登录流程                  | 主管理员 |
-| `/code <验证码>`        | 提交手机验证码                    | 主管理员 |
+| `/code <验证码>`        | 提交手机验证码（需混入非数字字符，详见注意事项）  | 主管理员 |
 | `/pass <密码>`         | 提交账号的二次验证（2FA）密码           | 主管理员 |
 | `/password <key>`    | 设置当前账号的密码                  | 管理员  |
 | `/dc <ID>`           | 指定 UserBot 的DC             | 管理员  |
@@ -123,16 +123,127 @@ docker run -d --name tgfilebot -p 8080:8080 -v $(pwd)/files:/root/files tgfilebo
 
 - **直接转发媒体**: 将媒体消息转发给 Bot，Bot 会返回支持分片流传输的直链。
 - **解析原始链接**: 发送 `t.me/c/xxx/yyy` 格式链接，Bot 会代为解密并生成下载地址。
-- **API 接口详情**:
-    - **流媒体接口**: `/stream?cid={cid}&mid={mid}&cate={bot|user}&key={key}&download=true`
-    - **跳转接口**: `/link?link={TG_LINK}&hash={hash}&uid={uid}`
-    - **伪静态地址**: `/stream/{mid}/{filename}?cid={cid}`
 
-### 💡 身份鉴权算法 (开发者参考)
+## HTTP API 接口
 
-如果您在配置中设置了 `password`，则访问敏感文件时必须携带 `key`（明文密码）或 `hash`。
-**Hash 计算公式**: `md5(userID + password)` 的前 6 位十六进制字符串。
-*示例*: userID 为 `8888`，密码为 `mypass`。则需计算 `md5("8888mypass")`。
+所有接口均由内置 HTTP 服务提供，默认监听 `8080` 端口。若配置了 `password`，则需在请求 URL 中附带鉴权参数（见下方鉴权说明）。
+
+### `GET /`
+
+返回服务器运行状态，无需鉴权。
+
+**响应示例**:
+```json
+{
+  "message": "服务器正在运行。",
+  "ok": true,
+  "uptime": "1d 2h 3m 4s",
+  "version": "v1.0.5"
+}
+```
+
+---
+
+### `GET /stream` — 流媒体 / 下载接口
+
+核心下载接口，支持 HTTP Range 分段请求，可在浏览器或播放器中实现随拖随播。
+
+**URL 格式**:
+```
+/stream?cid={cid}&mid={mid}&cate={bot|user}&key={key}&download=true
+```
+
+**或使用伪静态格式（更好的播放器兼容性）**:
+```
+/stream/{mid}/{filename}?cid={cid}&key={key}
+```
+
+| 参数 | 必填 | 说明 |
+|:---|:---:|:---|
+| `cid` | 否 | 频道 ID（负数形式，如 `-1001234567890`）。若 `config.json` 中已设置 `channelID` 则可省略 |
+| `mid` | 是 | 消息 ID（正整数）|
+| `cate` | 否 | 下载客户端选择：`user`（使用 UserBot，可访问私有频道）或 `bot`（默认）。UserBot 未登录时自动回退到 Bot |
+| `download` | 否 | 设为 `true` 时以附件模式下载（`Content-Disposition: attachment`），否则为内联播放 |
+| `key` | 否* | 明文访问密码（设置了 `password` 时必填其一）|
+| `hash` | 否* | 基于用户 ID 的哈希鉴权（设置了 `password` 时必填其一），需同时提供 `uid` |
+| `uid` | 否* | 使用 `hash` 鉴权时必须提供对应用户 ID |
+
+> 若消息为转发消息，程序会自动解析转发来源频道，确保分片下载稳定。
+
+---
+
+### `GET /link` — 链接解析跳转接口
+
+将 Telegram 消息链接解析为直链，并以 **302 重定向** 返回。
+
+**URL 格式**:
+```
+/link?link={TG_LINK}&key={key}&uid={uid}&hash={hash}
+```
+
+| 参数 | 必填 | 说明 |
+|:---|:---:|:---|
+| `link` | 是 | 完整的 Telegram 消息链接，格式为 `https://t.me/c/{cid}/{mid}` 或 `https://t.me/{username}/{mid}` |
+| `key` | 否* | 明文访问密码(与hash二选一) |
+| `hash` | 否* | 哈希鉴权(与key二选一) |
+| `uid` | 否* | 使用 `hash` 时对应的用户 ID |
+
+**支持的链接格式**:
+- 私有频道: `https://t.me/c/1234567890/100`
+- 公开频道: `https://t.me/channelname/100`
+- 带评论区链接: `https://t.me/c/1234567890/100?comment=200`
+
+---
+
+### `GET /search` — 频道内容搜索接口
+
+在已配置的搜索频道中并发全文检索，需 UserBot 已登录。
+
+**URL 格式**:
+```
+/search?keywords={关键词}&page={页码}&limit={每页数量}&offset={偏移量}&key={key}
+```
+
+| 参数 | 必填 | 说明 |
+|:---|:---:|:---|
+| `keywords` | 是 | 搜索关键词 |
+| `page` | 否 | 页码，默认 `1` |
+| `limit` | 否 | 每页返回数量，默认 `20` |
+| `offset` | 否 | 结果偏移量，默认 `0` |
+| `key` / `hash` / `uid` | 否* | 鉴权参数（同上）|
+
+**响应示例**:
+```json
+{
+  "more": false,
+  "items": [
+    {
+      "more": false,
+      "channel": "channelname",
+      "item": [
+        { "name": "example.mp4", "mid": 100, "cid": -1001234567890, "size": 104857600 }
+      ]
+    }
+  ]
+}
+```
+
+> 搜索范围为 `config.json` 中 `/add` 命令添加的频道别名列表。接口超时时间为 **30 秒**。
+
+---
+
+### 💡 身份鉴权说明
+
+若配置了 `password`，访问所有 HTTP 接口时须在 URL 中携带以下任意一种鉴权方式：
+
+| 鉴权方式 | URL 参数 | 说明 |
+|:---|:---|:---|
+| 明文密码 | `&key=yourpassword` | 直接传入配置中的 `password` 值 |
+| 哈希密码 | `&hash=xxxxxx&uid=888888` | 更安全的方式，避免明文暴露密码 |
+
+**Hash 计算公式**: `md5(uid + password)` 的前 **6 位**十六进制字符串。
+
+*示例*: `uid` 为 `8888`，`password` 为 `mypass`，则计算 `md5("8888mypass")` 并取前 6 位。
 
 ## 技术架构亮点
 
@@ -146,7 +257,16 @@ docker run -d --name tgfilebot -p 8080:8080 -v $(pwd)/files:/root/files tgfilebo
 ## 注意事项
 
 - **风控风险**: 频繁使用 UserBot 进行大文件下载可能触碰 Telegram 的 API 限制。建议将 `workers` 设置在合理范围（1-4）。
-- **账号异常**: 由于 Telegram 协议不断迭代，部分账号可能出现 `PHONE_CODE_EXPIRED` 错误，此时推荐优先尝试 `/qr` 二维码登录。
+
+- **⚠️ 验证码输入限制（重要）**: 由于 Telegram 的安全策略，当通过 Bot 消息提交 `/code` 验证码时，Telegram 服务器会检测到验证码是通过自动化方式发送的，从而**立即使验证码失效**，导致 `PHONE_CODE_EXPIRED` 错误。
+
+  **解决方法（必须手动操作）**：
+  1. 收到 Telegram 发来的 6 位数字验证码，例如 `12345`。
+  2. 在验证码数字之间**随机插入任意非数字字符**（字母、符号、空格均可），例如将 `12345` 改写为 `1a2b3c4d5` 或 `1-2-3-4-5`。
+  3. **手动**（非复制粘贴自动化消息）将混淆后的字符串发送给 Bot，即 `/code 1a2b3c4d5`。
+  4. 程序会自动过滤掉所有非数字字符，提取出真正的验证码 `12345` 进行登录。
+
+  > 此方法的原理：Telegram 对「原始验证码字符串」的发送行为进行监控，而混入随机字符后，消息内容不再与验证码完全匹配，可绕过该限制。优先推荐使用 `/qr` 二维码扫码登录以完全避免此问题。
 
 ## Bot 与 UserBot 的区别及 UserBot 风险
 

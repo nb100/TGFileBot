@@ -58,10 +58,7 @@ func newTask() *Task {
 // newStream 初始化并返回一个 Stream 对象，负责管理特定文件的流式下载
 func newStream(ctx context.Context, client *telegram.Client, media telegram.MessageMedia, workers int, mid int32, cid int64, name string) *Stream {
 	// 根据并发数动态调整分片大小
-	chunkSize := int64(512 * 1024)
-	if workers == 1 {
-		chunkSize = 1024 * 1024
-	}
+	chunkSize := int64(1024 * 1024)
 	// 默认 32MB 缓存
 	maxCacheSize := infos.Conf.MaxSize
 	if maxCacheSize == 0 {
@@ -94,7 +91,7 @@ func newStream(ctx context.Context, client *telegram.Client, media telegram.Mess
 // start 启动工作协程开始下载任务
 func (stream *Stream) start(contentStart, contentEnd int64) {
 	// 计算任务总数
-	maxTasks := int(math.Ceil(float64(stream.ContentSize) / float64(stream.ChunkSize)))
+	maxTasks := int(math.Ceil(float64(contentEnd-contentStart+1) / float64(stream.ChunkSize)))
 	// 限制并发协程数不超过配置值
 	if maxTasks > stream.Workers {
 		maxTasks = stream.Workers
@@ -218,11 +215,16 @@ func (stream *Stream) clean() {
 	timeout := time.NewTimer(5 * time.Second)
 	defer timeout.Stop()
 
-	// 循环排出管道内容
 	for {
 		select {
 		case task := <-stream.Tasks:
 			if task != nil {
+				// 等待任务完成后再释放，避免与下载协程产生 data race
+				task.Cond.L.Lock()
+				for !*task.Done {
+					task.Cond.Wait()
+				}
+				task.Cond.L.Unlock()
 				task.Content = nil
 				task = nil
 			}
