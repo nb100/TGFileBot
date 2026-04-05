@@ -854,6 +854,7 @@ func (infos *Infos) search(channel, keywords string, page, limit int, offset int
 		offSets.Mutex.Unlock()
 	}
 
+	slices.Reverse(ms)
 	maxCount := 3
 	rids := make(map[int64]bool)
 	mids := make([]int32, 0, len(ms)*maxCount)
@@ -877,6 +878,7 @@ func (infos *Infos) search(channel, keywords string, page, limit int, offset int
 		}
 	}
 
+	
 	results := [][]telegram.NewMessage{ms}
 
 	if len(rids) > 0 {
