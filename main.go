@@ -226,7 +226,7 @@ func newInfos(filePath, filesPath string) (*Infos, error) {
 		Pass:      make(chan string, 1),
 		HeadCache: make(map[string]MediaCache, 4),
 		TailCache: make(map[string]MediaCache, 4),
-		Rex:       regexp.MustCompile(`(?:FLOOD_PREMIUM_WAIT_|A WAIT OF |FLOOD_WAIT_)(\d+)`),
+		Rex:       regexp.MustCompile(`(?:FLOOD_PREMIUM_WAIT_|FLOOD_WAIT_)(\w+)|(?:A WAIT OF |WAIT )(\d+)`),
 	}
 	// 创建日志文件
 	if filePath != "" {
