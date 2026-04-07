@@ -370,6 +370,12 @@ func (infos *Infos) startBot() (err error) {
 	client.On(telegram.OnMessage, handleBotCommand)
 
 	go func() {
+		// 先清空默认的命令列表，确保没有权限的用户什么也看不到
+		_, err := client.SetBotCommands([]*telegram.BotCommand{}, nil)
+		if err != nil {
+			log.Printf("清空默认命令失败: %+v", err)
+		}
+
 		userID, err := client.ResolvePeer(infos.Conf.UserID)
 		if err != nil {
 			log.Printf("解析用户 ID 失败: %v", err)
