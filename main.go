@@ -191,7 +191,7 @@ func main() {
 			Handler:           http.HandlerFunc(handleMain), // 主路由处理函数
 			ReadTimeout:       30 * time.Second,             // 读取请求超时
 			ReadHeaderTimeout: 10 * time.Second,             // 读取请求头超时
-			WriteTimeout:      60 * time.Second,             // 写入响应超时
+			// WriteTimeout:   60 * time.Second,             // 禁用写入响应超时，允许大文件的长时间流式传输
 			IdleTimeout:       600 * time.Second,            // 空闲连接超时
 			MaxHeaderBytes:    1 << 20,                      // 最大头部字节数 (1MB)
 		}

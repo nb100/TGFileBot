@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -192,6 +193,26 @@ func (stream *Stream) download(numTask int, contentStart, contentEnd int64) {
 						return
 					}
 					// 刷新成功后继续重试当前分片
+					continue
+				case infos.Rex.MatchString(err.Error()):
+					wait := 3
+					matches := infos.Rex.FindStringSubmatch(err.Error())
+					if len(matches) > 1 {
+						for _, match := range matches[1:] {
+							if match != "" {
+								if value, e := strconv.Atoi(match); e == nil {
+									wait = value
+									break
+								}
+							}
+						}
+					}
+					log.Printf("协程%d: 访问太过频繁, 等待 %d 秒后重试", numTask, wait+1)
+					waitUntil := time.Now().Add(time.Duration(wait+1) * time.Second)
+					if currentWait := infos.WaitUntil.Load(); waitUntil.Unix() > currentWait {
+						infos.WaitUntil.Store(waitUntil.Unix())
+					}
+					time.Sleep(time.Duration(wait+1) * time.Second)
 					continue
 				}
 				// 遇到其他不可恢复错误，终止下载
