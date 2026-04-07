@@ -226,7 +226,7 @@ func newInfos(filePath, filesPath string) (*Infos, error) {
 		Pass:      make(chan string, 1),
 		HeadCache: make(map[string]MediaCache, 4),
 		TailCache: make(map[string]MediaCache, 4),
-		Rex:       regexp.MustCompile(`(?:FLOOD_PREMIUM_WAIT_|FLOOD_WAIT_)(\w+)|(?:A WAIT OF |WAIT )(\d+)`),
+		Rex:       regexp.MustCompile(`(?i)(?:FLOOD(?:_PREMIUM)?_WAIT_(\d+)|WAIT(?:\s+OF)?\s*(\d+))`),
 	}
 	// 创建日志文件
 	if filePath != "" {
@@ -293,10 +293,13 @@ func botConf(cate string) (botConf telegram.ClientConfig) {
 		},
 		FloodHandler: func(err error) bool {
 			wait := 3
-			matches := infos.Rex.FindStringSubmatch(strings.ToUpper(err.Error()))
+			matches := infos.Rex.FindStringSubmatch(err.Error())
 			if len(matches) > 1 {
-				if value, err := strconv.Atoi(matches[1]); err == nil {
-					wait = value
+				for _, match := range matches {
+					if value, err := strconv.Atoi(match); err == nil {
+						wait = value
+						break
+					}
 				}
 			}
 			log.Printf("访问太过频繁, 等待 %d 秒后重试", wait+1)
