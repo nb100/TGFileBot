@@ -192,8 +192,8 @@ func main() {
 			ReadTimeout:       30 * time.Second,             // 读取请求超时
 			ReadHeaderTimeout: 10 * time.Second,             // 读取请求头超时
 			// WriteTimeout:   60 * time.Second,             // 禁用写入响应超时，允许大文件的长时间流式传输
-			IdleTimeout:       600 * time.Second,            // 空闲连接超时
-			MaxHeaderBytes:    1 << 20,                      // 最大头部字节数 (1MB)
+			IdleTimeout:    600 * time.Second, // 空闲连接超时
+			MaxHeaderBytes: 1 << 20,           // 最大头部字节数 (1MB)
 		}
 
 		if err := server.ListenAndServe(); err != nil {
@@ -368,100 +368,111 @@ func (infos *Infos) startBot() (err error) {
 
 	// 注册 Bot 命令处理函数
 	client.On(telegram.OnMessage, handleBotCommand)
-	userID, err := client.ResolvePeer(infos.Conf.UserID)
-	if err != nil {
-		log.Printf("解析用户 ID 失败: %v", err)
-		return
-	}
-	commands := []*telegram.BotCommand{
-		{
-			Command:     "qr",
-			Description: "获取登录二维码",
-		},
-		{
-			Command:     "phone",
-			Description: "输入手机号登录",
-		},
-		{
-			Command:     "code",
-			Description: "输入验证码登录(需混入非数字字符)",
-		},
-		{
-			Command:     "pass",
-			Description: "输入2FA密码登录",
-		},
-	}
-	commonCommands := []*telegram.BotCommand{
-		{
-			Command:     "dc",
-			Description: "设置客户端默认DC",
-		},
-		{
-			Command:     "allow",
-			Description: "添加白名单",
-		},
-		{
-			Command:     "disallow",
-			Description: "移除白名单",
-		},
-		{
-			Command:     "add",
-			Description: "添加搜索频道",
-		},
-		{
-			Command:     "del",
-			Description: "移除搜索频道",
-		},
-		{
-			Command:     "list",
-			Description: "列出搜索频道或白名单",
-		},
-		{
-			Command:     "info",
-			Description: "获取程序运行信息",
-		},
-		{
-			Command:     "size",
-			Description: "设置程序缓存大小",
-		},
-		{
-			Command:     "site",
-			Description: "设置反代域名",
-		},
-		{
-			Command:     "port",
-			Description: "设置HTTP服务端口",
-		},
-		{
-			Command:     "check",
-			Description: "查找HASH对应的用户信息",
-		},
-		{
-			Command:     "workers",
-			Description: "设置并发数",
-		},
-		{
-			Command:     "channel",
-			Description: "设置绑定频道",
-		},
-		{
-			Command:     "password",
-			Description: "设置接口访问密码",
-		},
-	}
-	commands = append(commands, commonCommands...)
 
-	_, err = client.SetBotCommands(commands, &userID)
-	if err != nil {
-		log.Printf("设置 Bot 超级管理员命令失败: %+v", err)
-		return err
-	}
-	_, err = client.SetBotCommands(commonCommands, nil)
-	if err != nil {
-		log.Printf("设置 Bot 管理员命令失败: %+v", err)
-		return err
-	}
+	go func() {
+		userID, err := client.ResolvePeer(infos.Conf.UserID)
+		if err != nil {
+			log.Printf("解析用户 ID 失败: %v", err)
+			return
+		}
+		commands := []*telegram.BotCommand{
+			{
+				Command:     "qr",
+				Description: "获取登录二维码",
+			},
+			{
+				Command:     "phone",
+				Description: "输入手机号登录",
+			},
+			{
+				Command:     "code",
+				Description: "输入验证码登录(需混入非数字字符)",
+			},
+			{
+				Command:     "pass",
+				Description: "输入2FA密码登录",
+			},
+		}
+		commonCommands := []*telegram.BotCommand{
+			{
+				Command:     "dc",
+				Description: "设置客户端默认DC",
+			},
+			{
+				Command:     "allow",
+				Description: "添加白名单",
+			},
+			{
+				Command:     "disallow",
+				Description: "移除白名单",
+			},
+			{
+				Command:     "add",
+				Description: "添加搜索频道",
+			},
+			{
+				Command:     "del",
+				Description: "移除搜索频道",
+			},
+			{
+				Command:     "list",
+				Description: "列出搜索频道或白名单",
+			},
+			{
+				Command:     "info",
+				Description: "获取程序运行信息",
+			},
+			{
+				Command:     "size",
+				Description: "设置程序缓存大小",
+			},
+			{
+				Command:     "site",
+				Description: "设置反代域名",
+			},
+			{
+				Command:     "port",
+				Description: "设置HTTP服务端口",
+			},
+			{
+				Command:     "check",
+				Description: "查找HASH对应的用户信息",
+			},
+			{
+				Command:     "workers",
+				Description: "设置并发数",
+			},
+			{
+				Command:     "channel",
+				Description: "设置绑定频道",
+			},
+			{
+				Command:     "password",
+				Description: "设置接口访问密码",
+			},
+		}
+		commands = append(commands, commonCommands...)
 
+		_, err = client.SetBotCommands(commands, &userID)
+		if err != nil {
+			log.Printf("设置 Bot 超级管理员命令失败: %+v", err)
+			return
+		}
+
+		for _, adminID := range infos.Conf.AdminIDs {
+			userID, err := client.ResolvePeer(adminID)
+			if err != nil {
+				log.Printf("解析用户 ID 失败: %v", err)
+				continue
+			}
+			_, err = client.SetBotCommands(commonCommands, &userID)
+			if err != nil {
+				log.Printf("设置 Bot 管理员命令失败: %+v", err)
+				continue
+			}
+		}
+	}()
+	
 	log.Printf("Bot 启动成功")
 
 	infos.Mutex.Lock()
