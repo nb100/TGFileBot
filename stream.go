@@ -188,7 +188,8 @@ func (stream *Stream) download(numTask int, contentStart, contentEnd int64) {
 			stream.Mutex.Unlock()
 
 			// 调用 Gogram 接口从 Telegram 下载特定范围的文件块
-			content, fileName, err := stream.Client.DownloadChunk(srcCopy, int(task.ContentStart), int(task.ContentEnd), int(stream.ChunkSize), false, stream.Ctx, 90*time.Second)
+			// 将超时时间从 90s 缩短至 10s 以解决冷启动 TCP 连接假死的问题 [BUG-001]
+			content, fileName, err := stream.Client.DownloadChunk(srcCopy, int(task.ContentStart), int(task.ContentEnd), int(stream.ChunkSize), false, stream.Ctx, 10*time.Second)
 			if err != nil {
 				switch {
 				case telegram.MatchError(err, "FILE_REFERENCE_EXPIRED"):
