@@ -89,6 +89,7 @@ type Infos struct {
 	Conf       *Conf                 // 指向全局配置
 	File       *os.File              // 日志文件句柄
 	Rex        *regexp.Regexp        // 用于解析 Telegram FloodWait 错误的正则
+	RexRules   []*regexp.Regexp      // 预编译的群管正则规则缓存
 	FilesPath  string                // 配置文件存放目录
 	FilePath   string                // 日志文件路径
 	BotID      int64                 // Bot 自身的 ID
@@ -99,13 +100,12 @@ type Infos struct {
 	IDs        map[int64]ID          // 缓存用户 ID 到哈希的映射, 减少重复计算
 	HeadCache  map[string]MediaCache // 缓存文件头部数据
 	TailCache  map[string]MediaCache // 缓存文件尾部数据
-	RegexRules []*regexp.Regexp      // 预编译的群管正则规则缓存
 }
 
 var infos *Infos
 var offSets *OffSets
 var startTime time.Time
-var version = "v1.0.8"
+var version = "v1.0.9"
 
 // main 是程序的入口函数
 func main() {
@@ -268,7 +268,7 @@ func newInfos(filePath, filesPath string) (*Infos, error) {
 	infos.Conf = conf
 	infos.IDs = make(map[int64]ID, len(conf.AdminIDs)+len(conf.WhiteIDs)+1)
 	infos.buildIDs()
-	infos.buildRegex()
+	infos.buildRexRules()
 
 	// 获取 BotID
 	if conf.BotToken != "" {
@@ -294,11 +294,11 @@ func newOffSets() *OffSets {
 	}
 }
 
-// buildRegex 预编译正则规则并缓存到 infos.RegexRules
-func (infos *Infos) buildRegex() {
+// buildRegex 预编译正则规则并缓存到 infos.RexRules
+func (infos *Infos) buildRexRules() {
 	infos.Mutex.Lock()
 	defer infos.Mutex.Unlock()
-	infos.RegexRules = make([]*regexp.Regexp, 0, len(infos.Conf.Rules))
+	infos.RexRules = make([]*regexp.Regexp, 0, len(infos.Conf.Rules))
 	for _, rule := range infos.Conf.Rules {
 		if rule == "" {
 			continue
@@ -308,7 +308,7 @@ func (infos *Infos) buildRegex() {
 			log.Printf("正则规则编译失败 [%s]: %+v", rule, err)
 			continue
 		}
-		infos.RegexRules = append(infos.RegexRules, r)
+		infos.RexRules = append(infos.RexRules, r)
 	}
-	log.Printf("成功预编译 %d 条正则规则", len(infos.RegexRules))
+	log.Printf("成功预编译 %d 条正则规则", len(infos.RexRules))
 }

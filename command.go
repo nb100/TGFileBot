@@ -22,14 +22,14 @@ func handleBotCommand(m *telegram.NewMessage) error {
 	text := strings.TrimSpace(m.Text())
 	
 	// 拦截非管理指令并匹配正则过滤规则 [FEAT-002]
-	if !strings.HasPrefix(text, "/") {
+	if !m.IsMedia() && text != "" && !strings.HasPrefix(text, "/") && !strings.HasPrefix(text, "http") {
 		infos.Mutex.RLock()
-		regexRules := infos.RegexRules
+		rexRules := infos.RexRules
 		infos.Mutex.RUnlock()
 
-		if len(regexRules) > 0 {
-			for _, r := range regexRules {
-				if r.MatchString(text) {
+		if len(rexRules) > 0 {
+			for _, rexRule := range rexRules {
+				if rexRule.MatchString(text) {
 					if _, err := m.Delete(); err != nil {
 						log.Printf("删除群组匹配消息失败: %+v", err)
 					}
@@ -429,7 +429,7 @@ func handleBotCommand(m *telegram.NewMessage) error {
 		}
 		content := strings.TrimSpace(strings.TrimPrefix(text, "/list"))
 		if content == "" {
-			sendMS(m, "请提供要列出的类别: <code>channels</code> | <code>ids</code> | <code>rules</code>", nil, 60)
+			sendMS(m, "请提供要列出的类别: <code>channels</code> | <code>rules</code> | <code>ids</code>", nil, 60)
 			return nil
 		}
 		switch content {
@@ -585,7 +585,7 @@ func handleBotCommand(m *telegram.NewMessage) error {
 			log.Printf("保存配置文件失败: %+v", err)
 		}
 		infos.Mutex.Unlock()
-		infos.buildRegex()
+		infos.buildRexRules()
 		sendMS(m, "添加正则规则成功", nil, 60)
 		return nil
 	case strings.HasPrefix(text, "/delRule"):
@@ -609,7 +609,7 @@ func handleBotCommand(m *telegram.NewMessage) error {
 				log.Printf("保存配置文件失败: %+v", err)
 			}
 			infos.Mutex.Unlock()
-			infos.buildRegex()
+			infos.buildRexRules()
 			sendMS(m, fmt.Sprintf("按索引移除规则成功: %s", removed), nil, 60)
 			return nil
 		}
@@ -623,7 +623,7 @@ func handleBotCommand(m *telegram.NewMessage) error {
 				log.Printf("保存配置文件失败: %+v", err)
 			}
 			infos.Mutex.Unlock()
-			infos.buildRegex()
+			infos.buildRexRules()
 			sendMS(m, "按内容移除规则成功", nil, 60)
 			return nil
 		}

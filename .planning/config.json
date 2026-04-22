@@ -1,7 +1,0 @@
-{
-  "project_name": "TGFileBot",
-  "workflow_mode": "interactive",
-  "granularity": "detailed",
-  "parallelization": 4,
-  "instruction_file": "CLAUDE.md"
-}
