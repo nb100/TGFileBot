@@ -49,596 +49,599 @@ func handleBotCommand(m *telegram.NewMessage) error {
 		}()
 	}
 
-	switch {
-	case strings.HasPrefix(text, "/start"):
-		if !infos.isWhite(m.SenderID()) {
-			sendMS(m, "你没有使用此机器人的权限", nil, 60)
-			return nil
-		}
-
-		var src string
-		if m.SenderID() == infos.Conf.UserID {
-			switch infos.Status.Load() {
-			case 0:
-				src = "userBot 未登录, 仅使用 Bot 或发送 /phone 手机号登录 userBot"
-			case 1:
-				src = "正在等待验证码, 请发送 /code 验证码"
-			case 2:
-				src = "正在等待密码, 请发送 /pass 密码"
-			case 3:
-				src = "userBot 已登录"
-			}
-		} else {
-			src = "仅限内部使用, 请保管好你的HASH密码与UID"
-		}
-		sendMS(m, src, nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/allow"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		whiteID, err := strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(text, "/allow")), 10, 64)
-		if err != nil {
-			sendMS(m, fmt.Sprintf("添加白名单失败: %+v", err), nil, 60)
-			return nil
-		}
-
-		if whiteID != 0 {
-			if slices.Contains(infos.Conf.WhiteIDs, whiteID) {
-				sendMS(m, fmt.Sprintf("白名单中已存在: %d", whiteID), nil, 60)
+	if m.Channel == nil {
+		switch {
+		case strings.HasPrefix(text, "/start"):
+			if !infos.isWhite(m.SenderID()) {
+				sendMS(m, "你没有使用此机器人的权限", nil, 60)
 				return nil
 			}
 
-			infos.Mutex.Lock()
-			value := ID{
-				IsWhite: true,
+			var src string
+			if m.SenderID() == infos.Conf.UserID {
+				switch infos.Status.Load() {
+				case 0:
+					src = "userBot 未登录, 仅使用 Bot 或发送 /phone 手机号登录 userBot"
+				case 1:
+					src = "正在等待验证码, 请发送 /code 验证码"
+				case 2:
+					src = "正在等待密码, 请发送 /pass 密码"
+				case 3:
+					src = "userBot 已登录"
+				}
+			} else {
+				src = "仅限内部使用, 请保管好你的HASH密码与UID"
 			}
-			infos.IDs[whiteID] = value
-			infos.Conf.WhiteIDs = append(infos.Conf.WhiteIDs, whiteID)
-			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-				log.Printf("保存配置文件失败: %+v", err)
+			sendMS(m, src, nil, 60)
+			return nil
+		case strings.HasPrefix(text, "/allow"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
 			}
-			infos.Mutex.Unlock()
-			sendMS(m, fmt.Sprintf("添加白名单成功: %d", whiteID), nil, 60)
-		}
-		return nil
-	case strings.HasPrefix(text, "/disallow"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		whiteID, err := strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(text, "/disallow")), 10, 64)
-		if err != nil {
-			sendMS(m, fmt.Sprintf("移除白名单失败: %+v", err), nil, 60)
-			return nil
-		}
+			whiteID, err := strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(text, "/allow")), 10, 64)
+			if err != nil {
+				sendMS(m, fmt.Sprintf("添加白名单失败: %+v", err), nil, 60)
+				return nil
+			}
 
-		if whiteID != 0 {
-			if slices.Contains(infos.Conf.WhiteIDs, whiteID) {
+			if whiteID != 0 {
+				if slices.Contains(infos.Conf.WhiteIDs, whiteID) {
+					sendMS(m, fmt.Sprintf("白名单中已存在: %d", whiteID), nil, 60)
+					return nil
+				}
+
 				infos.Mutex.Lock()
-				delete(infos.IDs, whiteID)
-				infos.Conf.WhiteIDs = slices.DeleteFunc(infos.Conf.WhiteIDs, func(num int64) bool {
-					return num == whiteID
-				})
+				value := ID{
+					IsWhite: true,
+				}
+				infos.IDs[whiteID] = value
+				infos.Conf.WhiteIDs = append(infos.Conf.WhiteIDs, whiteID)
 				if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
 					log.Printf("保存配置文件失败: %+v", err)
 				}
 				infos.Mutex.Unlock()
-				sendMS(m, fmt.Sprintf("移除白名单成功: %d", whiteID), nil, 60)
+				sendMS(m, fmt.Sprintf("添加白名单成功: %d", whiteID), nil, 60)
+			}
+			return nil
+		case strings.HasPrefix(text, "/disallow"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
 				return nil
 			}
-			sendMS(m, fmt.Sprintf("用户 %d 不在白名单中", whiteID), nil, 60)
-		}
-		return nil
-	case strings.HasPrefix(text, "/qr"):
-		if m.SenderID() != infos.Conf.UserID {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		if err := infos.startUserBotQR(); err != nil {
-			sendMS(m, fmt.Sprintf("启动 QR 登录失败: %+v", err), nil, 60)
-		}
-		return nil
-	case strings.HasPrefix(text, "/phone"):
-		if m.SenderID() != infos.Conf.UserID {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/phone"))
-		if content == "" {
-			sendMS(m, "手机不能为空", nil, 60)
-			return nil
-		}
-		if !strings.HasPrefix(content, "+") {
-			content = "+" + content
-		}
-		if err := infos.startUserBot(content); err != nil {
-			sendMS(m, fmt.Sprintf("启动 UserBot 失败: %+v", err), nil, 60)
-		}
-		return nil
-	case strings.HasPrefix(text, "/code"):
-		if m.SenderID() != infos.Conf.UserID {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		code := strings.TrimSpace(strings.TrimPrefix(text, "/code"))
-		if code == "" {
-			sendMS(m, "验证码不能为空", nil, 60)
-			return nil
-		}
-		if err := infos.submitCode(code); err != nil {
-			sendMS(m, fmt.Sprintf("提交验证码失败: %+v", err), nil, 60)
-			return nil
-		}
-		sendMS(m, "提交验证码成功", nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/pass") && !strings.HasPrefix(text, "/password"):
-		if m.SenderID() != infos.Conf.UserID {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		pass := strings.TrimSpace(strings.TrimPrefix(text, "/pass"))
-		if pass == "" {
-			sendMS(m, "2FA密码不能为空", nil, 60)
-			return nil
-		}
-		if err := infos.submitPass(pass); err != nil {
-			sendMS(m, fmt.Sprintf("提交2FA密码失败: %+v", err), nil, 60)
-			return nil
-		}
-		sendMS(m, "提交2FA密码成功", nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/dc"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/dc"))
-		if content == "" {
-			if infos.Conf.DC != 0 {
-				sendMS(m, fmt.Sprintf("当前DC: %d", infos.Conf.DC), nil, 60)
-			} else {
-				sendMS(m, "当前未手动指定DC", nil, 60)
-			}
-			return nil
-		}
-		value, err := strconv.Atoi(content)
-		if err != nil {
-			sendMS(m, fmt.Sprintf("DC格式错误: %+v", err), nil, 60)
-			return nil
-		}
-		if value < 1 || value > 5 {
-			sendMS(m, "DC必须在1-5之间", nil, 60)
-			return nil
-		}
-		infos.Mutex.Lock()
-		infos.Conf.DC = value
-		if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-			log.Printf("保存配置文件失败: %+v", err)
-		}
-		infos.Mutex.Unlock()
-		sendMS(m, fmt.Sprintf("DC已设置为: %d, 重启后生效", value), nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/site"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/site"))
-		if content == "" {
-			sendMS(m, fmt.Sprintf("当前反代地址: %s", infos.Conf.Site), nil, 60)
-			return nil
-		}
-		if !strings.HasPrefix(content, "http") {
-			sendMS(m, "反代地址格式错误", nil, 60)
-			return nil
-		}
-		infos.Mutex.Lock()
-		infos.Conf.Site = content
-		if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-			log.Printf("保存配置文件失败: %+v", err)
-		}
-		infos.Mutex.Unlock()
-		sendMS(m, fmt.Sprintf("反代地址已设置为: %s", content), nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/size"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/size"))
-		if content == "" {
-			sendMS(m, fmt.Sprintf("当前最大缓存: %s", formatFileSize(infos.Conf.MaxSize)), nil, 60)
-			return nil
-		}
-		value := convertMaxSize(content)
-		if value == 0 {
-			sendMS(m, "最大缓存格式错误", nil, 60)
-			return nil
-		}
-		infos.Mutex.Lock()
-		infos.Conf.MaxSize = value
-		if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-			log.Printf("保存配置文件失败: %+v", err)
-		}
-		infos.Mutex.Unlock()
-		src := fmt.Sprintf("最大缓存已设置为: %s", formatFileSize(value))
-		if value > 128*1024*1024 {
-			src += ", 当前缓存较大, 容易引起OOM, 请谨慎设置"
-		}
-		sendMS(m, src, nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/password"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/password"))
-		if content == "" {
-			sendMS(m, fmt.Sprintf("当前密码: %s", infos.Conf.Password), nil, 60)
-			return nil
-		}
-		infos.Mutex.Lock()
-		infos.Conf.Password = content
-		for key, value := range infos.IDs {
-			value.Hash = ""
-			infos.IDs[key] = value
-		}
-		if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-			log.Printf("保存配置文件失败: %+v", err)
-		}
-		infos.Mutex.Unlock()
-		sendMS(m, fmt.Sprintf("密码已设置为: %s", content), nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/channel"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/channel"))
-		if content == "" {
-			sendMS(m, fmt.Sprintf("当前频道ID: %d", infos.Conf.ChannelID), nil, 60)
-			return nil
-		}
-		if !strings.HasPrefix(content, "-100") {
-			content = "-100" + content
-		}
-		value, err := strconv.ParseInt(content, 10, 64)
-		if err != nil {
-			sendMS(m, fmt.Sprintf("频道ID格式错误: %+v", err), nil, 60)
-			return nil
-		}
-		infos.Mutex.Lock()
-		infos.Conf.ChannelID = value
-		if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-			log.Printf("保存配置文件失败: %+v", err)
-		}
-		infos.Mutex.Unlock()
-		sendMS(m, fmt.Sprintf("频道ID已设置为: %d", value), nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/workers"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/workers"))
-		if content == "" {
-			sendMS(m, fmt.Sprintf("当前并发数: %d", infos.Conf.Workers), nil, 60)
-			return nil
-		}
-		num, err := strconv.Atoi(content)
-		if err != nil {
-			sendMS(m, "并发数必须为数字", nil, 60)
-			return nil
-		}
-		if num <= 0 {
-			sendMS(m, "并发数必须大于 0", nil, 60)
-			return nil
-		}
-		infos.Mutex.Lock()
-		infos.Conf.Workers = num
-		if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-			log.Printf("保存配置文件失败: %+v", err)
-		}
-		infos.Mutex.Unlock()
-		src := fmt.Sprintf("并发数已设置为: %d", num)
-		if num > 4 {
-			src += ", 当前并发数较大, 容易引起下载失败甚至封号, 请谨慎设置"
-		}
-		sendMS(m, src, nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/check"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/check"))
-		if content == "" {
-			sendMS(m, "请提供要检查的哈希值", nil, 60)
-			return nil
-		}
-		if uid := infos.checkHash(content); uid != 0 {
-			user, err := infos.BotClient.GetUser(uid)
+			whiteID, err := strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(text, "/disallow")), 10, 64)
 			if err != nil {
-				log.Printf("获取用户信息失败: %+v", err)
+				sendMS(m, fmt.Sprintf("移除白名单失败: %+v", err), nil, 60)
 				return nil
 			}
-			fullName := user.FirstName + user.LastName
-			var values strings.Builder
-			values.WriteString(fmt.Sprintf("• <b>用户 ID</b>: <code>%d</code>\n", uid))
-			if fullName != "" {
-				values.WriteString(fmt.Sprintf("• <b>显示名称</b>: %s\n", html.EscapeString(fullName)))
-			}
-			if user.Username != "" {
-				values.WriteString(fmt.Sprintf("• <b>用户昵称</b>: @%s\n", user.Username))
-			}
-			sendMS(m, values.String(), nil, 60)
-		}
-		return nil
-	case strings.HasPrefix(text, "/add") && !strings.HasPrefix(text, "/addrule"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		channel := strings.TrimSpace(strings.TrimPrefix(text, "/add"))
-		if channel == "" {
-			sendMS(m, "请提供要添加的频道别名", nil, 60)
-			return nil
-		}
-		channel = strings.TrimPrefix(channel, "@")
-		if slices.Contains(infos.Conf.Channels, channel) {
-			sendMS(m, fmt.Sprintf("频道 %s 已存在", channel), nil, 60)
-			return nil
-		}
-		infos.Mutex.Lock()
-		infos.Conf.Channels = append(infos.Conf.Channels, channel)
-		if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-			log.Printf("保存配置文件失败: %+v", err)
-		}
-		infos.Mutex.Unlock()
-		sendMS(m, fmt.Sprintf("添加频道成功: %s", channel), nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/del") && !strings.HasPrefix(text, "/delrule"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		channel := strings.TrimSpace(strings.TrimPrefix(text, "/del"))
-		if channel == "" {
-			sendMS(m, "请提供要移除的频道别名", nil, 60)
-			return nil
-		}
-		channel = strings.TrimPrefix(channel, "@")
-		if !slices.Contains(infos.Conf.Channels, channel) {
-			sendMS(m, fmt.Sprintf("频道 %s 不在搜索列表中", channel), nil, 60)
-			return nil
-		}
-		infos.Mutex.Lock()
-		infos.Conf.Channels = slices.DeleteFunc(infos.Conf.Channels, func(key string) bool {
-			return key == channel
-		})
-		if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-			log.Printf("保存配置文件失败: %+v", err)
-		}
-		infos.Mutex.Unlock()
-		sendMS(m, fmt.Sprintf("移除频道成功: %s", channel), nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/list"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/list"))
-		if content == "" {
-			sendMS(m, "请提供要列出的类别: <code>channels</code> | <code>rules</code> | <code>ids</code>", nil, 60)
-			return nil
-		}
-		switch content {
-		case "channels":
-			var values strings.Builder
-			count := len(infos.Conf.Channels)
-			if count == 0 {
-				sendMS(m, "⚠️ <b>暂无搜索频道别名</b>", nil, 60)
-				break
-			}
-			values.WriteString(fmt.Sprintf("🔍 <b>搜索频道别名列表</b> (共 %d 个)\n", count))
-			values.WriteString("━━━━━━━━━━━━━━━\n")
-			for _, ch := range infos.Conf.Channels {
-				if !strings.HasPrefix(ch, "@") {
-					ch = "@" + ch
+
+			if whiteID != 0 {
+				if slices.Contains(infos.Conf.WhiteIDs, whiteID) {
+					infos.Mutex.Lock()
+					delete(infos.IDs, whiteID)
+					infos.Conf.WhiteIDs = slices.DeleteFunc(infos.Conf.WhiteIDs, func(num int64) bool {
+						return num == whiteID
+					})
+					if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+						log.Printf("保存配置文件失败: %+v", err)
+					}
+					infos.Mutex.Unlock()
+					sendMS(m, fmt.Sprintf("移除白名单成功: %d", whiteID), nil, 60)
+					return nil
 				}
-				values.WriteString(fmt.Sprintf("• %s\n", html.EscapeString(ch)))
+				sendMS(m, fmt.Sprintf("用户 %d 不在白名单中", whiteID), nil, 60)
 			}
-			sendMS(m, values.String(), nil, 60)
-		case "ids":
-			var values strings.Builder
-			count := len(infos.Conf.WhiteIDs)
-			if count == 0 {
-				sendMS(m, "⚠️ <b>白名单目前为空</b>", nil, 60)
-				break
+			return nil
+		case strings.HasPrefix(text, "/qr"):
+			if m.SenderID() != infos.Conf.UserID {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
 			}
-			values.WriteString(fmt.Sprintf("🛡️ <b>白名单 ID 列表</b> (共 %d 个)\n", count))
-			values.WriteString("━━━━━━━━━━━━━━━\n")
-			for _, whiteID := range infos.Conf.WhiteIDs {
-				values.WriteString(fmt.Sprintf("• <code>%d</code>\n", whiteID))
+			if err := infos.startUserBotQR(); err != nil {
+				sendMS(m, fmt.Sprintf("启动 QR 登录失败: %+v", err), nil, 60)
 			}
-			sendMS(m, values.String(), nil, 60)
-		case "rules":
-			var values strings.Builder
-			count := len(infos.Conf.Rules)
-			if count == 0 {
-				sendMS(m, "⚠️ <b>目前暂无正则过滤规则</b>", nil, 60)
-				break
+			return nil
+		case strings.HasPrefix(text, "/phone"):
+			if m.SenderID() != infos.Conf.UserID {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
 			}
-			values.WriteString(fmt.Sprintf("🚫 <b>正则过滤规则列表</b> (共 %d 个)\n", count))
-			values.WriteString("━━━━━━━━━━━━━━━\n")
-			for i, rule := range infos.Conf.Rules {
-				values.WriteString(fmt.Sprintf("%d. <code>%s</code>\n", i, html.EscapeString(rule)))
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/phone"))
+			if content == "" {
+				sendMS(m, "手机不能为空", nil, 60)
+				return nil
 			}
-			sendMS(m, values.String(), nil, 60)
-		default:
-			sendMS(m, "类别错误", nil, 60)
-		}
-		return nil
-	case strings.HasPrefix(text, "/port"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/port"))
-		if content == "" {
-			sendMS(m, "请提供要修改的端口", nil, 60)
-			return nil
-		}
-		value, err := strconv.Atoi(content)
-		if err != nil {
-			sendMS(m, "端口格式错误", nil, 60)
-			return nil
-		}
-		if value <= 0 || value > 65535 {
-			sendMS(m, "端口必须在 1-65535 之间", nil, 60)
-			return nil
-		}
-		infos.Mutex.Lock()
-		infos.Conf.Port = value
-		if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-			log.Printf("保存配置文件失败: %+v", err)
-		}
-		infos.Mutex.Unlock()
-		sendMS(m, fmt.Sprintf("端口已设置为: %d, 重启后生效", value), nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/info"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-
-		num := 10
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/info"))
-		if content != "" {
-			src, value := extractContent(content)
-			if value != nil {
-				num = *value
+			if !strings.HasPrefix(content, "+") {
+				content = "+" + content
 			}
-			content = src
-		}
-
-		if infos.FilePath == "" {
-			sendMS(m, "暂未开启日志记录", nil, 60)
-			return nil
-		}
-
-		lines, err := readLastLines(infos.FilePath, content, num)
-		if err != nil {
-			sendMS(m, fmt.Sprintf("读取日志失败: %+v", err), nil, 60)
-			return nil
-		}
-
-		if len(lines) == 0 {
-			sendMS(m, "暂无日志内容", nil, 60)
-			return nil
-		}
-
-		const maxCount = 4000
-		var values strings.Builder
-		values.WriteString(fmt.Sprintf("<b>📜 系统日志 (最后 %d 行)</b>\n\n", len(lines)))
-		values.WriteString("<pre>")
-
-		for _, line := range lines {
-			line = html.EscapeString(line) + "\n"
-			if values.Len()+len(line)+len("</pre>") > maxCount {
-				values.WriteString("</pre>")
-				sendMS(m, values.String(), nil)
-				values.Reset()
-				values.WriteString("<pre>")
+			if err := infos.startUserBot(content); err != nil {
+				sendMS(m, fmt.Sprintf("启动 UserBot 失败: %+v", err), nil, 60)
 			}
-			values.WriteString(line)
-		}
-
-		if values.Len() > len("<pre>") {
-			values.WriteString("</pre>")
-			sendMS(m, values.String(), nil)
-		}
-		return nil
-	case strings.HasPrefix(text, "/addrule"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
 			return nil
-		}
-		rule := strings.TrimSpace(strings.TrimPrefix(text, "/addrule"))
-		if rule == "" {
-			sendMS(m, "请提供要添加的正则表达式", nil, 60)
+		case strings.HasPrefix(text, "/code"):
+			if m.SenderID() != infos.Conf.UserID {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			code := strings.TrimSpace(strings.TrimPrefix(text, "/code"))
+			if code == "" {
+				sendMS(m, "验证码不能为空", nil, 60)
+				return nil
+			}
+			if err := infos.submitCode(code); err != nil {
+				sendMS(m, fmt.Sprintf("提交验证码失败: %+v", err), nil, 60)
+				return nil
+			}
+			sendMS(m, "提交验证码成功", nil, 60)
 			return nil
-		}
-		if _, err := regexp.Compile(rule); err != nil {
-			sendMS(m, fmt.Sprintf("正则表达式格式错误: %+v", err), nil, 60)
+		case strings.HasPrefix(text, "/pass") && !strings.HasPrefix(text, "/password"):
+			if m.SenderID() != infos.Conf.UserID {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			pass := strings.TrimSpace(strings.TrimPrefix(text, "/pass"))
+			if pass == "" {
+				sendMS(m, "2FA密码不能为空", nil, 60)
+				return nil
+			}
+			if err := infos.submitPass(pass); err != nil {
+				sendMS(m, fmt.Sprintf("提交2FA密码失败: %+v", err), nil, 60)
+				return nil
+			}
+			sendMS(m, "提交2FA密码成功", nil, 60)
 			return nil
-		}
-
-		infos.Mutex.Lock()
-		if slices.Contains(infos.Conf.Rules, rule) {
-			infos.Mutex.Unlock()
-			sendMS(m, "该规则已存在", nil, 60)
-			return nil
-		}
-		infos.Conf.Rules = append(infos.Conf.Rules, rule)
-		if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
-			log.Printf("保存配置文件失败: %+v", err)
-		}
-		infos.Mutex.Unlock()
-		infos.buildRexRules()
-		sendMS(m, "添加正则规则成功", nil, 60)
-		return nil
-	case strings.HasPrefix(text, "/delrule"):
-		if !infos.isAdmin(m.SenderID()) {
-			sendMS(m, "你没有使用此命令的权限", nil, 60)
-			return nil
-		}
-		content := strings.TrimSpace(strings.TrimPrefix(text, "/delrule"))
-		if content == "" {
-			sendMS(m, "请提供要移除的规则索引或内容", nil, 60)
-			return nil
-		}
-
-		infos.Mutex.Lock()
-		index, err := strconv.Atoi(content)
-		if err == nil && index >= 0 && index < len(infos.Conf.Rules) {
-			// 按索引删除
-			removed := infos.Conf.Rules[index]
-			infos.Conf.Rules = append(infos.Conf.Rules[:index], infos.Conf.Rules[index+1:]...)
+		case strings.HasPrefix(text, "/dc"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/dc"))
+			if content == "" {
+				if infos.Conf.DC != 0 {
+					sendMS(m, fmt.Sprintf("当前DC: %d", infos.Conf.DC), nil, 60)
+				} else {
+					sendMS(m, "当前未手动指定DC", nil, 60)
+				}
+				return nil
+			}
+			value, err := strconv.Atoi(content)
+			if err != nil {
+				sendMS(m, fmt.Sprintf("DC格式错误: %+v", err), nil, 60)
+				return nil
+			}
+			if value < 1 || value > 5 {
+				sendMS(m, "DC必须在1-5之间", nil, 60)
+				return nil
+			}
+			infos.Mutex.Lock()
+			infos.Conf.DC = value
 			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
 				log.Printf("保存配置文件失败: %+v", err)
 			}
 			infos.Mutex.Unlock()
-			infos.buildRexRules()
-			sendMS(m, fmt.Sprintf("按索引移除规则成功: %s", removed), nil, 60)
+			sendMS(m, fmt.Sprintf("DC已设置为: %d, 重启后生效", value), nil, 60)
 			return nil
-		}
-
-		// 按内容删除
-		if slices.Contains(infos.Conf.Rules, content) {
-			infos.Conf.Rules = slices.DeleteFunc(infos.Conf.Rules, func(r string) bool {
-				return r == content
+		case strings.HasPrefix(text, "/site"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/site"))
+			if content == "" {
+				sendMS(m, fmt.Sprintf("当前反代地址: %s", infos.Conf.Site), nil, 60)
+				return nil
+			}
+			if !strings.HasPrefix(content, "http") {
+				sendMS(m, "反代地址格式错误", nil, 60)
+				return nil
+			}
+			infos.Mutex.Lock()
+			infos.Conf.Site = content
+			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+				log.Printf("保存配置文件失败: %+v", err)
+			}
+			infos.Mutex.Unlock()
+			sendMS(m, fmt.Sprintf("反代地址已设置为: %s", content), nil, 60)
+			return nil
+		case strings.HasPrefix(text, "/size"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/size"))
+			if content == "" {
+				sendMS(m, fmt.Sprintf("当前最大缓存: %s", formatFileSize(infos.Conf.MaxSize)), nil, 60)
+				return nil
+			}
+			value := convertMaxSize(content)
+			if value == 0 {
+				sendMS(m, "最大缓存格式错误", nil, 60)
+				return nil
+			}
+			infos.Mutex.Lock()
+			infos.Conf.MaxSize = value
+			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+				log.Printf("保存配置文件失败: %+v", err)
+			}
+			infos.Mutex.Unlock()
+			src := fmt.Sprintf("最大缓存已设置为: %s", formatFileSize(value))
+			if value > 128*1024*1024 {
+				src += ", 当前缓存较大, 容易引起OOM, 请谨慎设置"
+			}
+			sendMS(m, src, nil, 60)
+			return nil
+		case strings.HasPrefix(text, "/password"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/password"))
+			if content == "" {
+				sendMS(m, fmt.Sprintf("当前密码: %s", infos.Conf.Password), nil, 60)
+				return nil
+			}
+			infos.Mutex.Lock()
+			infos.Conf.Password = content
+			for key, value := range infos.IDs {
+				value.Hash = ""
+				infos.IDs[key] = value
+			}
+			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+				log.Printf("保存配置文件失败: %+v", err)
+			}
+			infos.Mutex.Unlock()
+			sendMS(m, fmt.Sprintf("密码已设置为: %s", content), nil, 60)
+			return nil
+		case strings.HasPrefix(text, "/channel"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/channel"))
+			if content == "" {
+				sendMS(m, fmt.Sprintf("当前频道ID: %d", infos.Conf.ChannelID), nil, 60)
+				return nil
+			}
+			if !strings.HasPrefix(content, "-100") {
+				content = "-100" + content
+			}
+			value, err := strconv.ParseInt(content, 10, 64)
+			if err != nil {
+				sendMS(m, fmt.Sprintf("频道ID格式错误: %+v", err), nil, 60)
+				return nil
+			}
+			infos.Mutex.Lock()
+			infos.Conf.ChannelID = value
+			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+				log.Printf("保存配置文件失败: %+v", err)
+			}
+			infos.Mutex.Unlock()
+			sendMS(m, fmt.Sprintf("频道ID已设置为: %d", value), nil, 60)
+			return nil
+		case strings.HasPrefix(text, "/workers"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/workers"))
+			if content == "" {
+				sendMS(m, fmt.Sprintf("当前并发数: %d", infos.Conf.Workers), nil, 60)
+				return nil
+			}
+			num, err := strconv.Atoi(content)
+			if err != nil {
+				sendMS(m, "并发数必须为数字", nil, 60)
+				return nil
+			}
+			if num <= 0 {
+				sendMS(m, "并发数必须大于 0", nil, 60)
+				return nil
+			}
+			infos.Mutex.Lock()
+			infos.Conf.Workers = num
+			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+				log.Printf("保存配置文件失败: %+v", err)
+			}
+			infos.Mutex.Unlock()
+			src := fmt.Sprintf("并发数已设置为: %d", num)
+			if num > 4 {
+				src += ", 当前并发数较大, 容易引起下载失败甚至封号, 请谨慎设置"
+			}
+			sendMS(m, src, nil, 60)
+			return nil
+		case strings.HasPrefix(text, "/check"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/check"))
+			if content == "" {
+				sendMS(m, "请提供要检查的哈希值", nil, 60)
+				return nil
+			}
+			if uid := infos.checkHash(content); uid != 0 {
+				user, err := infos.BotClient.GetUser(uid)
+				if err != nil {
+					log.Printf("获取用户信息失败: %+v", err)
+					return nil
+				}
+				fullName := user.FirstName + user.LastName
+				var values strings.Builder
+				values.WriteString(fmt.Sprintf("• <b>用户 ID</b>: <code>%d</code>\n", uid))
+				if fullName != "" {
+					values.WriteString(fmt.Sprintf("• <b>显示名称</b>: %s\n", html.EscapeString(fullName)))
+				}
+				if user.Username != "" {
+					values.WriteString(fmt.Sprintf("• <b>用户昵称</b>: @%s\n", user.Username))
+				}
+				sendMS(m, values.String(), nil, 60)
+			}
+			return nil
+		case strings.HasPrefix(text, "/add") && !strings.HasPrefix(text, "/addrule"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			channel := strings.TrimSpace(strings.TrimPrefix(text, "/add"))
+			if channel == "" {
+				sendMS(m, "请提供要添加的频道别名", nil, 60)
+				return nil
+			}
+			channel = strings.TrimPrefix(channel, "@")
+			if slices.Contains(infos.Conf.Channels, channel) {
+				sendMS(m, fmt.Sprintf("频道 %s 已存在", channel), nil, 60)
+				return nil
+			}
+			infos.Mutex.Lock()
+			infos.Conf.Channels = append(infos.Conf.Channels, channel)
+			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+				log.Printf("保存配置文件失败: %+v", err)
+			}
+			infos.Mutex.Unlock()
+			sendMS(m, fmt.Sprintf("添加频道成功: %s", channel), nil, 60)
+			return nil
+		case strings.HasPrefix(text, "/del") && !strings.HasPrefix(text, "/delrule"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			channel := strings.TrimSpace(strings.TrimPrefix(text, "/del"))
+			if channel == "" {
+				sendMS(m, "请提供要移除的频道别名", nil, 60)
+				return nil
+			}
+			channel = strings.TrimPrefix(channel, "@")
+			if !slices.Contains(infos.Conf.Channels, channel) {
+				sendMS(m, fmt.Sprintf("频道 %s 不在搜索列表中", channel), nil, 60)
+				return nil
+			}
+			infos.Mutex.Lock()
+			infos.Conf.Channels = slices.DeleteFunc(infos.Conf.Channels, func(key string) bool {
+				return key == channel
 			})
 			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
 				log.Printf("保存配置文件失败: %+v", err)
 			}
 			infos.Mutex.Unlock()
+			sendMS(m, fmt.Sprintf("移除频道成功: %s", channel), nil, 60)
+			return nil
+		case strings.HasPrefix(text, "/list"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/list"))
+			if content == "" {
+				sendMS(m, "请提供要列出的类别: <code>channels</code> | <code>rules</code> | <code>ids</code>", nil, 60)
+				return nil
+			}
+			switch content {
+			case "channels":
+				var values strings.Builder
+				count := len(infos.Conf.Channels)
+				if count == 0 {
+					sendMS(m, "⚠️ <b>暂无搜索频道别名</b>", nil, 60)
+					break
+				}
+				values.WriteString(fmt.Sprintf("🔍 <b>搜索频道别名列表</b> (共 %d 个)\n", count))
+				values.WriteString("━━━━━━━━━━━━━━━\n")
+				for _, ch := range infos.Conf.Channels {
+					if !strings.HasPrefix(ch, "@") {
+						ch = "@" + ch
+					}
+					values.WriteString(fmt.Sprintf("• %s\n", html.EscapeString(ch)))
+				}
+				sendMS(m, values.String(), nil, 60)
+			case "ids":
+				var values strings.Builder
+				count := len(infos.Conf.WhiteIDs)
+				if count == 0 {
+					sendMS(m, "⚠️ <b>白名单目前为空</b>", nil, 60)
+					break
+				}
+				values.WriteString(fmt.Sprintf("🛡️ <b>白名单 ID 列表</b> (共 %d 个)\n", count))
+				values.WriteString("━━━━━━━━━━━━━━━\n")
+				for _, whiteID := range infos.Conf.WhiteIDs {
+					values.WriteString(fmt.Sprintf("• <code>%d</code>\n", whiteID))
+				}
+				sendMS(m, values.String(), nil, 60)
+			case "rules":
+				var values strings.Builder
+				count := len(infos.Conf.Rules)
+				if count == 0 {
+					sendMS(m, "⚠️ <b>目前暂无正则过滤规则</b>", nil, 60)
+					break
+				}
+				values.WriteString(fmt.Sprintf("🚫 <b>正则过滤规则列表</b> (共 %d 个)\n", count))
+				values.WriteString("━━━━━━━━━━━━━━━\n")
+				for i, rule := range infos.Conf.Rules {
+					values.WriteString(fmt.Sprintf("%d. <code>%s</code>\n", i, html.EscapeString(rule)))
+				}
+				sendMS(m, values.String(), nil, 60)
+			default:
+				sendMS(m, "类别错误", nil, 60)
+			}
+			return nil
+		case strings.HasPrefix(text, "/port"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/port"))
+			if content == "" {
+				sendMS(m, "请提供要修改的端口", nil, 60)
+				return nil
+			}
+			value, err := strconv.Atoi(content)
+			if err != nil {
+				sendMS(m, "端口格式错误", nil, 60)
+				return nil
+			}
+			if value <= 0 || value > 65535 {
+				sendMS(m, "端口必须在 1-65535 之间", nil, 60)
+				return nil
+			}
+			infos.Mutex.Lock()
+			infos.Conf.Port = value
+			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+				log.Printf("保存配置文件失败: %+v", err)
+			}
+			infos.Mutex.Unlock()
+			sendMS(m, fmt.Sprintf("端口已设置为: %d, 重启后生效", value), nil, 60)
+			return nil
+		case strings.HasPrefix(text, "/info"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+
+			num := 10
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/info"))
+			if content != "" {
+				src, value := extractContent(content)
+				if value != nil {
+					num = *value
+				}
+				content = src
+			}
+
+			if infos.FilePath == "" {
+				sendMS(m, "暂未开启日志记录", nil, 60)
+				return nil
+			}
+
+			lines, err := readLastLines(infos.FilePath, content, num)
+			if err != nil {
+				sendMS(m, fmt.Sprintf("读取日志失败: %+v", err), nil, 60)
+				return nil
+			}
+
+			if len(lines) == 0 {
+				sendMS(m, "暂无日志内容", nil, 60)
+				return nil
+			}
+
+			const maxCount = 4000
+			var values strings.Builder
+			values.WriteString(fmt.Sprintf("<b>📜 系统日志 (最后 %d 行)</b>\n\n", len(lines)))
+			values.WriteString("<pre>")
+
+			for _, line := range lines {
+				line = html.EscapeString(line) + "\n"
+				if values.Len()+len(line)+len("</pre>") > maxCount {
+					values.WriteString("</pre>")
+					sendMS(m, values.String(), nil)
+					values.Reset()
+					values.WriteString("<pre>")
+				}
+				values.WriteString(line)
+			}
+
+			if values.Len() > len("<pre>") {
+				values.WriteString("</pre>")
+				sendMS(m, values.String(), nil)
+			}
+			return nil
+		case strings.HasPrefix(text, "/addrule"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			rule := strings.TrimSpace(strings.TrimPrefix(text, "/addrule"))
+			if rule == "" {
+				sendMS(m, "请提供要添加的正则表达式", nil, 60)
+				return nil
+			}
+			if _, err := regexp.Compile(rule); err != nil {
+				sendMS(m, fmt.Sprintf("正则表达式格式错误: %+v", err), nil, 60)
+				return nil
+			}
+
+			infos.Mutex.Lock()
+			if slices.Contains(infos.Conf.Rules, rule) {
+				infos.Mutex.Unlock()
+				sendMS(m, "该规则已存在", nil, 60)
+				return nil
+			}
+			infos.Conf.Rules = append(infos.Conf.Rules, rule)
+			if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+				log.Printf("保存配置文件失败: %+v", err)
+			}
+			infos.Mutex.Unlock()
 			infos.buildRexRules()
-			sendMS(m, "按内容移除规则成功", nil, 60)
+			sendMS(m, "添加正则规则成功", nil, 60)
 			return nil
-		}
-		infos.Mutex.Unlock()
-		sendMS(m, "未找到该规则", nil, 60)
-		return nil
-	default:
-		if !infos.isWhite(m.SenderID()) && m.SenderID() != 0 {
-			sendMS(m, "你没有使用此机器人的权限", nil, 60)
+		case strings.HasPrefix(text, "/delrule"):
+			if !infos.isAdmin(m.SenderID()) {
+				sendMS(m, "你没有使用此命令的权限", nil, 60)
+				return nil
+			}
+			content := strings.TrimSpace(strings.TrimPrefix(text, "/delrule"))
+			if content == "" {
+				sendMS(m, "请提供要移除的规则索引或内容", nil, 60)
+				return nil
+			}
+
+			infos.Mutex.Lock()
+			index, err := strconv.Atoi(content)
+			if err == nil && index >= 0 && index < len(infos.Conf.Rules) {
+				// 按索引删除
+				removed := infos.Conf.Rules[index]
+				infos.Conf.Rules = append(infos.Conf.Rules[:index], infos.Conf.Rules[index+1:]...)
+				if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+					log.Printf("保存配置文件失败: %+v", err)
+				}
+				infos.Mutex.Unlock()
+				infos.buildRexRules()
+				sendMS(m, fmt.Sprintf("按索引移除规则成功: %s", removed), nil, 60)
+				return nil
+			}
+
+			// 按内容删除
+			if slices.Contains(infos.Conf.Rules, content) {
+				infos.Conf.Rules = slices.DeleteFunc(infos.Conf.Rules, func(r string) bool {
+					return r == content
+				})
+				if err := saveConf(infos.Conf, infos.FilesPath); err != nil {
+					log.Printf("保存配置文件失败: %+v", err)
+				}
+				infos.Mutex.Unlock()
+				infos.buildRexRules()
+				sendMS(m, "按内容移除规则成功", nil, 60)
+				return nil
+			}
+			infos.Mutex.Unlock()
+			sendMS(m, "未找到该规则", nil, 60)
 			return nil
+		default:
+			if !infos.isWhite(m.SenderID()) && m.SenderID() != 0 {
+				sendMS(m, "你没有使用此机器人的权限", nil, 60)
+				return nil
+			}
+			return handleMess(m)
 		}
-		return handleMess(m)
 	}
+	return nil
 }
 
 // handleMess 处理接收到的普通消息，解析其中的媒体文件或 Telegram 链接
