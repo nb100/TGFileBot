@@ -223,6 +223,11 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusPartialContent)
 	}
 
+	// 提前发送 Header，重置客户端(ExoPlayer)连接超时倒计时
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
 	log.Printf("开始下载: cid=%d, mid=%d, name=%s, start=%d, end=%d", cid, mid, fileName, start, end)
 
 	// 如果是 HEAD 请求, 只返回首部信息后提早结束避免开启流媒体下载协程
@@ -271,9 +276,11 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 					}
 
 					// 写入响应
-					if _, err := w.Write(content); err != nil {
-						log.Printf("写入文件流时出错: cid=%d, mid=%d, name=%s, err=%v", cid, mid, fileName, err)
-						return
+					if len(content) > 0 {
+						if _, err := w.Write(content); err != nil {
+							log.Printf("写入文件流时出错: cid=%d, mid=%d, name=%s, err=%v", cid, mid, fileName, err)
+							return
+						}
 					}
 					// 检查是否已经写完当前请求的所有范围
 					if task.ContentEnd >= end {
