@@ -415,21 +415,22 @@ func (infos *Infos) resetStatus() {
 
 // code 是登录回调, 暂停协程等待用户通过 Bot 发送验证码
 func (infos *Infos) code() (code string, err error) {
-	if infos.Status.Load() == 0 {
-		infos.Mutex.Lock()
-		infos.Status.Store(1)
-		infos.Mutex.Unlock()
-		sendMS(nil, "等待用户输入 /code 验证码...", nil, 120)
-		select {
-		case code := <-infos.Code:
-			return code, nil
-		case <-time.After(2 * time.Minute):
-			err = errors.New("等待验证码超时")
-			sendMS(nil, err.Error(), nil, 60)
-			return "", err
-		}
-	} else {
+	// 使用CompareAndSwap原子操作确保只有一个goroutine能进入
+	if !infos.Status.CompareAndSwap(0, 1) {
 		err = errors.New("当前状态不是等待验证码")
+		sendMS(nil, err.Error(), nil, 60)
+		return "", err
+	}
+	timeout := time.NewTimer(2 * time.Minute)
+	defer timeout.Stop()
+
+	sendMS(nil, "等待用户输入 /code 验证码...", nil, 120)
+	select {
+	case code := <-infos.Code:
+		return code, nil
+	case <-timeout.C:
+		infos.Status.Store(0)
+		err = errors.New("等待验证码超时")
 		sendMS(nil, err.Error(), nil, 60)
 		return "", err
 	}
@@ -461,22 +462,23 @@ func (infos *Infos) submitCode(str string) (err error) {
 
 // pass 是登录回调, 暂停协程等待用户通过 Bot 发送 2FA 密码
 func (infos *Infos) pass() (pass string, err error) {
-	if infos.Status.Load() == 1 {
-		infos.Mutex.Lock()
-		infos.Status.Store(2)
-		infos.Mutex.Unlock()
-		sendMS(nil, "等待用户输入 /pass 2FA密码...", nil, 120)
-		select {
-		case pass := <-infos.Pass:
-			return pass, nil
-		case <-time.After(2 * time.Minute):
-			err = errors.New("等待2FA密码超时")
-			sendMS(nil, err.Error(), nil, 60)
-			return "", err
-		}
-	} else {
+	// 使用CompareAndSwap原子操作确保只有一个goroutine能进入
+	if !infos.Status.CompareAndSwap(1, 2) {
 		err = errors.New("当前状态不是等待2FA密码")
 		sendMS(nil, err.Error(), nil, 60)
+		return "", err
+	}
+	timeout := time.NewTimer(2 * time.Minute)
+	defer timeout.Stop()
+
+	sendMS(nil, "等待用户输入 /pass 2FA密码...", nil, 120)
+	select {
+	case pass := <-infos.Pass:
+		return pass, nil
+	case <-timeout.C:
+		err = errors.New("等待2FA密码超时")
+		sendMS(nil, err.Error(), nil, 60)
+		infos.Status.Store(1)
 		return "", err
 	}
 }
