@@ -160,12 +160,33 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 	if cate == "user" && infos.Status.Load() == 3 {
 		infos.Client = infos.UserClient
 	} else {
+		cate = "bot"
 		infos.Client = infos.BotClient
 	}
 
-	// 唤醒TCP连接（同步等待），确保重连完成后再发起消息请求
-	if err := infos.wakeTCP(); err != nil {
-		log.Printf("唤醒 TCP 连接失败: %+v", err)
+	switch cate {
+	case "user":
+		if time.Since(infos.TCPStatus.User.WakeTime).Minutes() > 30 {
+			if err := infos.wakeTCP(cate); err != nil {
+				log.Printf("唤醒 TCP 连接失败: %+v", err)
+			}
+		} else {
+			diff := time.Since(infos.TCPStatus.User.WakeTime)
+			minutes := int(diff.Minutes())
+			seconds := int(diff.Seconds()) % 60
+			log.Printf("TCP 链路正常, %02d分%02d秒前唤醒", minutes, seconds)
+		}
+	case "bot":
+		if time.Since(infos.TCPStatus.Bot.WakeTime).Minutes() > 30 {
+			if err := infos.wakeTCP(cate); err != nil {
+				log.Printf("唤醒 TCP 连接失败: %+v", err)
+			}
+		} else {
+			diff := time.Since(infos.TCPStatus.Bot.WakeTime)
+			minutes := int(diff.Minutes())
+			seconds := int(diff.Seconds()) % 60
+			log.Printf("TCP 链路正常, %02d分%02d秒前唤醒", minutes, seconds)
+		}
 	}
 
 	// 4. 从 Telegram 获取指定消息
@@ -227,19 +248,27 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	log.Printf("开始下载: cid=%d, mid=%d, name=%s, start=%d, end=%d", cid, mid, fileName, start, end)
-
 	// 如果是 HEAD 请求, 只返回首部信息后提早结束避免开启流媒体下载协程
 	if r.Method == http.MethodHead {
 		return
 	}
+
+	log.Printf("开始下载: cid=%d, mid=%d, name=%s, start=%d, end=%d", cid, mid, fileName, start, end)
 
 	// 8. 缓存逻辑：检查头部/尾部缓存是否命中, 并决定实际下载起点
 	stream.HeadSize, stream.TailSize = mediaCacheSizes(size)
 
 	// 9. 启动并发下载协程
 	go stream.start(start, end)
-	defer stream.clean() // 结束时清理
+	defer func() {
+		stream.clean()
+		switch cate {
+		case "user":
+			infos.TCPStatus.User.WakeTime = time.Now()
+		case "bot":
+			infos.TCPStatus.Bot.WakeTime = time.Now()
+		}
+	}()
 
 	// 10. 循环从下载管道读取分片并写入 HTTP 响应体
 	if r.Method == http.MethodGet {

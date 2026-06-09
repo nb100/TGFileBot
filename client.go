@@ -469,7 +469,7 @@ func (infos *Infos) submitCode(str string) (err error) {
 
 	timeout := time.NewTimer(2 * time.Minute)
 	defer timeout.Stop()
-	
+
 	select {
 	case infos.Code <- code:
 		return nil
@@ -516,7 +516,7 @@ func (infos *Infos) submitPass(pass string) (err error) {
 
 	timeout := time.NewTimer(2 * time.Minute)
 	defer timeout.Stop()
-	
+
 	select {
 	case infos.Pass <- pass:
 		return nil
@@ -528,7 +528,7 @@ func (infos *Infos) submitPass(pass string) (err error) {
 }
 
 // wakeTCP 预热连接，防止冷启动卡死
-func (infos *Infos) wakeTCP() error {
+func (infos *Infos) wakeTCP(cate string) error {
 	if infos.Client == nil {
 		return errors.New("infos.Client 不能为 nil")
 	}
@@ -558,11 +558,27 @@ func (infos *Infos) wakeTCP() error {
 			return err
 		} else {
 			log.Printf("TCP 链路已恢复, 延迟: %dms", value.Milliseconds())
+			switch cate {
+			case "bot":
+				infos.TCPStatus.Bot.Latenc = value.Milliseconds()
+				infos.TCPStatus.Bot.WakeTime = time.Now()
+			case "user":
+				infos.TCPStatus.User.Latenc = value.Milliseconds()
+				infos.TCPStatus.User.WakeTime = time.Now()
+			}
 			return nil
 		}
 	}
 
 	log.Printf("TCP 链路正常, 延迟: %dms", latenc.Milliseconds())
+	switch cate {
+	case "bot":
+		infos.TCPStatus.Bot.Latenc = latenc.Milliseconds()
+		infos.TCPStatus.Bot.WakeTime = time.Now()
+	case "user":
+		infos.TCPStatus.User.Latenc = latenc.Milliseconds()
+		infos.TCPStatus.User.WakeTime = time.Now()
+	}
 	return nil
 }
 

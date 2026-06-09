@@ -79,6 +79,11 @@ type ID struct {
 	IsWhite bool
 }
 
+type TCPStatu struct {
+	Latenc   int64
+	WakeTime time.Time
+}
+
 // Infos 结构体保存了程序运行时的全局状态和资源句柄
 type Infos struct {
 	BotClient  *telegram.Client       // 独立的 Bot 客户端（用于与用户交互）
@@ -100,6 +105,10 @@ type Infos struct {
 	IDs        map[int64]ID           // 缓存用户 ID 到哈希的映射, 减少重复计算
 	HeadCache  map[string]*MediaCache // 缓存文件头部数据
 	TailCache  map[string]*MediaCache // 缓存文件尾部数据
+	TCPStatus  struct {
+		Bot  TCPStatu
+		User TCPStatu
+	} // 记录TCP连接状态
 }
 
 var infos *Infos
