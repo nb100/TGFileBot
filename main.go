@@ -115,7 +115,7 @@ type Infos struct {
 var infos *Infos
 var offSets *OffSets
 var startTime time.Time
-var version = "v1.0.11"
+var version = "v1.1.1"
 
 // main 是程序的入口函数
 func main() {
