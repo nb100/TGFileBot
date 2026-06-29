@@ -541,7 +541,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 				infos.Cond.L.Unlock()
 			}()
 
-			result, err := infos.search(channel, keywords, page, limit, int32(offset))
+			result, err := infos.search(channel, keywords, page, limit, int32(offset), params.Filter)
 			if err != nil {
 				return
 			}

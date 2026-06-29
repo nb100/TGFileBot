@@ -694,7 +694,7 @@ func (infos *Infos) list(channel string, page, limit int, filter int64) (items I
 			name = strings.TrimSpace(m.Text())
 		}
 		name = strings.ReplaceAll(name, "_", "")
-		
+
 		items.Item = append(items.Item, Item{
 			Name: name,
 			Size: size,
@@ -709,7 +709,7 @@ func (infos *Infos) list(channel string, page, limit int, filter int64) (items I
 }
 
 // search 在指定频道中搜索关键词并返回匹配的媒体文件列表
-func (infos *Infos) search(channel, keywords string, page, limit int, offset int32) (items Items, err error) {
+func (infos *Infos) search(channel, keywords string, page, limit int, offset int32, filter int64) (items Items, err error) {
 	if waitUntil := infos.WaitUntil.Load(); waitUntil > 0 {
 		if remaining := time.Until(time.Unix(waitUntil, 0)); remaining > 0 {
 			log.Printf("搜索: 检测到FloodWait, 等待 %.2f 秒", remaining.Seconds())
@@ -799,6 +799,10 @@ func (infos *Infos) search(channel, keywords string, page, limit int, offset int
 				if value, ok := rids[m.Message.GroupedID]; !ok || !value {
 					continue
 				}
+			}
+			size := m.File.Size
+			if size < filter {
+				continue
 			}
 
 			if items.Channel == "" {
