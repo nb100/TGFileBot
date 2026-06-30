@@ -677,8 +677,14 @@ func (infos *Infos) list(channel string, page, limit int, filter int64, reverse 
 	if reverse {
 		slices.Reverse(ms)
 	}
+
+	mids := make(map[int32]bool, 0)
 	for num, m := range ms {
 		if m.File == nil {
+			continue
+		}
+
+		if value, ok := mids[m.ID]; ok && value {
 			continue
 		}
 
@@ -699,6 +705,8 @@ func (infos *Infos) list(channel string, page, limit int, filter int64, reverse 
 				if IsVideoFile(media.File.Ext) && media.File.Size < filter {
 					continue
 				}
+				mids[media.ID] = true
+
 				item := handleItem(media)
 				items.Item = append(items.Item, item)
 			}
