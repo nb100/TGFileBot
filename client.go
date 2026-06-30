@@ -678,10 +678,18 @@ func (infos *Infos) list(channel string, page, limit int, filter int64, reverse 
 		slices.Reverse(ms)
 	}
 
+	infos.Mutex.RLock()
+	latestCount := infos.LatestCount
+	latestID := infos.LatestID
+	infos.Mutex.RUnlock()
+
 	mids := make(map[int32]bool, 0)
 	maxNum := len(ms) - 1
 	for num, m := range ms {
 		if m.File == nil {
+			continue
+		}
+		if num <= latestCount && strings.Contains(latestID, strconv.FormatInt(int64(m.ID), 10)) {
 			continue
 		}
 
@@ -702,34 +710,33 @@ func (infos *Infos) list(channel string, page, limit int, filter int64, reverse 
 			if err != nil {
 				log.Printf("提取媒体组错误: %+v", err)
 			}
-			if reverse {
+			if !reverse {
 				slices.Reverse(medias)
 			}
 
 			src := channel
+			count := 0
 			for _, media := range medias {
 				if IsVideoFile(media.File.Ext) && media.File.Size < filter {
 					continue
 				}
 
 				sid := strconv.FormatInt(int64(media.ID), 10)
-				src += ":" + sid
-				if num == 0 {
-					infos.Mutex.RLock()
-					latestID := infos.LatestID
-					infos.Mutex.RUnlock()
-					if strings.Contains(latestID, sid) {
-						break
-					}
-				} else if num == maxNum {
-					infos.Mutex.Lock()
-					infos.LatestID = src
-					infos.Mutex.Unlock()
+				if strings.Contains(latestID, sid) {
+					break
 				}
 
+				count ++
+				src += ":" + sid
 				mids[media.ID] = true
 				item := handleItem(media)
 				items.Item = append(items.Item, item)
+			}
+			if num == maxNum {
+				infos.Mutex.Lock()
+				infos.LatestCount = count
+				infos.LatestID = src
+				infos.Mutex.Unlock()
 			}
 		} else {
 			item := handleItem(m)
