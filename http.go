@@ -357,8 +357,8 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		log.Printf("正在处理来自 %s 的请求, 开始下载, cid=%d, mid=%d, name=%s", clientIP, params.CID, params.MID, fileName)
 		buf := new(bytes.Buffer)
 		_, err = infos.Client.DownloadMedia(src.Media(), &telegram.DownloadOptions{
-			Buffer:    buf,
-			Ctx:       r.Context(),
+			Buffer: buf,
+			Ctx:    r.Context(),
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -481,9 +481,7 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 						}
 						// 检查是否已经写完当前请求的所有范围
 						if task.ContentEnd >= end {
-							if infos.Conf.DeBUG {
-								log.Printf("流式传输文件已完成: cid=%d, mid=%d, name=%s", params.CID, params.MID, fileName)
-							}
+							log.Printf("流式传输文件已完成: cid=%d, mid=%d, name=%s", params.CID, params.MID, fileName)
 							return
 						}
 						task = nil
