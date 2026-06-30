@@ -688,12 +688,11 @@ func (infos *Infos) list(channel string, page, limit int, filter int64, reverse 
 		if value, ok := mids[m.ID]; ok && value {
 			continue
 		}
-		mids[m.ID] = true
 
 		if IsVideoFile(m.File.Ext) && m.File.Size < filter {
 			continue
 		}
-		
+
 		if items.Channel == "" {
 			items.Channel = strings.TrimSpace(m.Channel.Title)
 		}
