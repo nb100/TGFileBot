@@ -667,13 +667,16 @@ func (infos *Infos) list(channel string, page, limit int, filter int64, reverse 
 	if err != nil {
 		return items, err
 	}
-	if len(ms) == 0 {
+
+	lenMs := len(ms)
+	switch {
+	case lenMs == 0:
 		return items, errors.New("未找到匹配消息")
+	case lenMs == limit:
+		handleOffset("set", fmt.Sprintf("%s|%d", channel, page+1), ms[lenMs-1].ID)
+		items.HasMore = true
 	}
 
-	if len(ms) == limit {
-		handleOffset("set", fmt.Sprintf("%s|%d", channel, page+1), ms[len(ms)-1].ID)
-	}
 	if reverse {
 		slices.Reverse(ms)
 	}
@@ -726,7 +729,7 @@ func (infos *Infos) list(channel string, page, limit int, filter int64, reverse 
 					break
 				}
 
-				count ++
+				count++
 				src += ":" + sid
 				mids[media.ID] = true
 				item := handleItem(media)
@@ -744,10 +747,7 @@ func (infos *Infos) list(channel string, page, limit int, filter int64, reverse 
 		}
 	}
 
-	if len(items.Item) > 0 {
-		items.HasMore = true
-		items.ID = channel
-	}
+	items.ID = channel
 	return items, nil
 }
 
@@ -783,13 +783,15 @@ func (infos *Infos) search(channel, keywords string, page, limit int, offset int
 	if err != nil {
 		return items, err
 	}
-	if len(ms) == 0 {
-		return items, errors.New("未找到匹配消息")
-	}
 
-	if len(ms) == limit {
+	lenMs := len(ms)
+	switch {
+	case lenMs == 0:
+		return items, errors.New("未找到匹配消息")
+	case lenMs == limit:
 		key := fmt.Sprintf("%s|%s|%d", channel, keywords, page+1)
-		handleOffset("set", key, ms[len(ms)-1].ID)
+		handleOffset("set", key, ms[lenMs-1].ID)
+		items.HasMore = true
 	}
 
 	if reverse {
@@ -797,7 +799,7 @@ func (infos *Infos) search(channel, keywords string, page, limit int, offset int
 	}
 	maxCount := 3
 	rids := make(map[int64]bool)
-	mids := make([]int32, 0, len(ms)*maxCount)
+	mids := make([]int32, 0, lenMs*maxCount)
 	seen := make(map[int32]bool)
 	for _, m := range ms {
 		if m.File == nil {
@@ -857,11 +859,8 @@ func (infos *Infos) search(channel, keywords string, page, limit int, offset int
 			items.Item = append(items.Item, handleItem(m))
 		}
 	}
-	if len(items.Item) > 0 {
-		items.HasMore = true
-		items.ID = channel
-	}
 
+	items.ID = channel
 	return items, nil
 }
 
